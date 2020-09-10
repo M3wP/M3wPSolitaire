@@ -1,0 +1,6 @@
+[build]
+Disk="GEOSCA65.d64"
+Header="SamSeqHdr.bin"
+
+[Sequential]
+Data="SamSeq.bin"
