@@ -16,8 +16,10 @@
 
 GAMECORE	=	$7F40
 
-CARDPILE_Y	=	$48
 TOPPILES_Y	=	$10
+
+CARDWIDTH	=	4 * 8
+CARDHEIGHT	=	6 * 8
 
 SPAREDEK_X	=	$23
 SPAREDEK_TOP 	=	TOPPILES_Y 	
@@ -32,6 +34,26 @@ FLIPPILE_TOP	=	TOPPILES_Y
 FLIPPILE_BOTTOM = 	FLIPPILE_TOP + (6 * 8) - 1
 FLIPPILE_LEFT	=	FLIPCRD0_X * 8
 FLIPPILE_RIGHT	=	FLIPPILE_LEFT + (8 * 8) - 1
+	
+CARDPILE_Y	=	$48
+CARDPLE0_X	=	$02
+CARDPLE0_TOP	=	CARDPILE_Y
+CARDPLE0_BOTTOM	=	$C7
+CARDPLE0_LEFT	=	CARDPLE0_X * 8
+CARDPLE0_RIGHT	=	CARDPLE0_LEFT + (4 * 8) - 1
+CARDPLE1_LEFT	=	CARDPLE0_LEFT + (5 * 8)
+CARDPLE1_RIGHT	=	CARDPLE0_RIGHT + (5 * 8)
+CARDPLE2_LEFT	=	CARDPLE1_LEFT + (5 * 8)
+CARDPLE2_RIGHT	=	CARDPLE1_RIGHT + (5 * 8)
+CARDPLE3_LEFT	=	CARDPLE2_LEFT + (5 * 8)
+CARDPLE3_RIGHT	=	CARDPLE2_RIGHT + (5 * 8)
+CARDPLE4_LEFT	=	CARDPLE3_LEFT + (5 * 8)
+CARDPLE4_RIGHT	=	CARDPLE3_RIGHT + (5 * 8)
+CARDPLE5_LEFT	=	CARDPLE4_LEFT + (5 * 8)
+CARDPLE5_RIGHT	=	CARDPLE4_RIGHT + (5 * 8)
+CARDPLE6_LEFT	=	CARDPLE5_LEFT + (5 * 8)
+CARDPLE6_RIGHT	=	CARDPLE5_RIGHT + (5 * 8)
+
 	
 	.struct		DEALPILE
 		Length	.byte
@@ -198,10 +220,89 @@ HookPressVec:
 	JMP	@exit
 	
 @flip0:
+	LDX	GAMECORE + GAMEDATA::FlipPl0
+	BEQ	@card0
+
+	JSR	FlipLoadLastRect
+	
+	JSR	IsMseInRegion
+	CMP	#TRUE
+	BNE	@card0
+
+	JSR	FlipLoadLastCard
+
+	JSR	GameFindNextPile
+
+	LDA	r15H
+	CMP	r13H
+	BEQ	@exit
+
+	JSR	InvertRectangle
+	
+	JSR	FlipMoveCard
+	
+	JMP	@update
+	
+@card0:
+	LDA	#$00
+	STA	r15H
+	
+@loop0:
+	ASL
+	TAX
+	LDA	DealData0, X
+	STA	a0L
+	LDA	DealData0 + 1, X
+	STA	a0H
+
+	LDA	CardData0, X
+	STA	a1L
+	LDA	CardData0 + 1, X
+	STA	a1H
+
+	JSR	CardLoadPileRect
+	
+	JSR	IsMseInRegion
+	CMP	#TRUE
+	BNE	@next0
+	
+	JSR	CardFindMseCard
+	BCC	@solv0
+	
+	JSR	GameFindNextPile
+
+	LDA	r15H
+	CMP	r13H
+	BEQ	@exit
+
+	JSR	InvertRectangle
+
+	LDA	r15H
+	ASL
+	TAX
+	LDA	CardData0, X
+	STA	a1L
+	LDA	CardData0 + 1, X
+	STA	a1H
+
+	JSR	CardMoveCard
+	
+	JMP	@update
+	
+@next0:
+	INC	r15H
+	LDA	r15H
+	CMP	#$07
+	BNE	@loop0
+	
+@solv0:
+	JMP	@exit
+	
+@update:
+	JSR	GameUpdatePiles
 
 @exit:
 	LoadB	dispBufferOn, ST_WR_FORE | ST_WR_BACK
-
 	RTS
 
 
@@ -302,9 +403,8 @@ DeckDeal:
 	
 ;	ASL
 ;	STA	r14L
-	
-	LDA	#$00
-	STA	(a1), Y
+;	LDA	#$00
+;	STA	(a1), Y
 
 ;	Deal cards from deck
 	LDA	(a0), Y
@@ -324,11 +424,15 @@ DeckDeal:
 	DEC	r13H
 	BNE	@loop1
 
-	JSR	DealCardPop
+	JSR	DealPopCard
 
-	JSR	DealPileDraw
+	JSR	DealDrawPile
 	
-	JSR	CardPileDraw
+	JSR	CardDrawPile
+	
+	LDX	r15H
+	LDA	#$00
+	STA	GAMECORE + GAMEDATA::DirtyPl, X
 		
 	LDA	r15L
 	CMP	#$07
@@ -362,7 +466,7 @@ DeckDeal:
 
 
 ;-------------------------------------------------------------------------------
-DealCardPop:
+DealPopCard:
 ;-------------------------------------------------------------------------------
 	LDY	#$00
 	LDA	(a0), Y		;Deal pile count
@@ -402,7 +506,7 @@ DealCardPop:
 
 
 ;-------------------------------------------------------------------------------
-DealPileDraw:
+DealDrawPile:
 ;-------------------------------------------------------------------------------
 	LDY	#$00
 	LDA	(a0), Y
@@ -456,6 +560,261 @@ DealPileDraw:
 @exit:
 	RTS
 
+
+;-------------------------------------------------------------------------------
+CardMoveCard:
+;	IN	r13L	card 
+;		r15H	start pile
+;		r15L	index
+;		r13H	new pile
+;		r14L	card suit
+;		a0	deal pile
+;		a1	card pile
+;-------------------------------------------------------------------------------
+
+;	TODO: Set autosolve on if doing so
+
+	LDY	#$00
+	LDA	(a1), Y
+	TAY
+	DEY
+	CPY	r15L
+	BEQ	@topcrd
+	
+	JMP	@mvlst
+
+@topcrd:
+;	Remove card from the pile
+	LDX	r15H
+
+	TAY
+	STA	GAMECORE + GAMEDATA::LastLns, X
+	
+	DEY
+	TYA
+	LDY	#$00
+	STA	(a1), Y
+	
+	LDA	GAMECORE + GAMEDATA::DirtyPl, X
+	ORA	#$80
+	STA	GAMECORE + GAMEDATA::DirtyPl, X
+
+	LDA	r13H
+	CMP	#$08
+	BCC	@topmov
+
+	TAX
+
+	LDA	GAMECORE + GAMEDATA::DirtyPl, X
+	ORA	#$80
+	STA	GAMECORE + GAMEDATA::DirtyPl, X
+	
+	TXA
+	
+	SEC
+	SBC	#$08
+	TAX
+	
+	LDA	r13L
+	STA	GAMECORE + GAMEDATA::SolvPl0, X
+	
+	JMP	@checkpop
+
+@topmov:
+	LDA	r13H
+	ASL
+	TAX
+	LDA	CardData0, X
+	STA	a2L
+	LDA	CardData0 + 1, X
+	STA	a2H
+	
+	LDY	#$00
+	LDA	(a2), Y
+	
+	LDX	r13H
+	STA	GAMECORE + GAMEDATA::LastLns, X
+	
+	TAX
+	INX
+	TXA
+	STA	(a2), Y
+	TAY
+	LDA	r13L
+	STA	(a2), Y
+
+	LDX	r13H
+	LDA	GAMECORE + GAMEDATA::DirtyPl, X
+	ORA	#$80
+	STA	GAMECORE + GAMEDATA::DirtyPl, X
+	
+	JMP	@checkpop
+
+@mvlst:
+	LDY	#$00
+	LDA	(a1), Y
+	LDX	r15H
+	STA	GAMECORE + GAMEDATA::LastLns, X
+	STA	r12L
+	
+	LDA	GAMECORE + GAMEDATA::DirtyPl, X
+	ORA	#$80
+	STA	GAMECORE + GAMEDATA::DirtyPl, X
+
+	LDA	r15L
+	STA	(a1), Y
+
+	LDA	r13H
+	ASL
+	TAX
+	LDA	CardData0, X
+	STA	a2L
+	LDA	CardData0 + 1, X
+	STA	a2H
+	
+	LDY	#$00
+	LDA	(a2), Y
+	STA	r12H
+	
+	LDX	r13H
+	STA	GAMECORE + GAMEDATA::LastLns, X
+
+	LDA	GAMECORE + GAMEDATA::DirtyPl, X
+	ORA	#$80
+	STA	GAMECORE + GAMEDATA::DirtyPl, X
+	
+	LDA	r12L
+	SEC
+	SBC	r15L
+	
+	CLC
+	ADC	r12H
+	
+	STA	(a2), Y
+	
+	INC	r15L
+	INC	r12L
+	INC	r12H
+	
+@loop0:
+	LDY	r15L
+	LDA	(a1), Y
+	
+	LDY	r12H
+	STA	(a2), Y
+	
+	INC	r12H
+	INC	r15L
+	LDA	r15L
+	CMP	r12L
+	BNE	@loop0
+
+@checkpop:
+	LDY	#$00
+	LDA	(a1), Y
+	BNE	@exit
+	
+	LDA	(a0), Y
+	BEQ	@exit
+	
+	JSR	DealPopCard
+	
+@exit:
+	RTS
+
+
+;-------------------------------------------------------------------------------
+CardFindMseCard:
+;	IN	r15H	pile index
+;		a0	deal pile
+;		a1	card pile
+;		r2	
+;	OUT	r13L	card 
+;		r13H	length card pile
+;		r15L	index
+;		r2
+;-------------------------------------------------------------------------------
+	LDY	#$00
+	STY	r15L
+	STY	r14L
+	
+	LDA	(a1), Y
+	STA	r13H
+	BEQ	@exit
+
+@loop0:
+	LDA	r2L
+	
+	LDY	r15L
+	INY
+	CPY	r13H
+	BNE	@tile0
+	
+	CLC
+	ADC	#CARDHEIGHT - 1
+	JMP	@cont0
+	
+@tile0:
+	CLC
+	ADC	#$07
+	
+@cont0:
+	STA	r2H
+	CMP	#$C8
+	BCC	@cont1
+	
+	LDA	#$C7
+	STA	r2H
+	
+@cont1:
+	LDA	r14L
+	BNE	@next0
+	
+	JSR	IsMseInRegion
+	CMP	#TRUE
+	BNE	@next0
+	
+	LDY	r15L
+	INY
+	LDA	(a1), Y
+	STA	r13L
+
+;	Store top y co-ord and continue
+	LDA	r2L
+	STA	r14L
+	LDA	r15L
+	STA	r14H
+	
+;	SEC
+;	RTS
+	
+@next0:	
+	INC	r2H
+	LDA	r2H
+	STA	r2L
+	
+	INC	r15L
+	LDA	r15L
+	CMP	r13H
+	BNE	@loop0
+
+@done0:
+	LDA	r14L
+	BEQ	@exit
+	
+	STA	r2L
+	
+	LDA	r14H
+	STA	r15L
+	
+	SEC
+	RTS
+
+@exit:
+	CLC
+	
+	RTS
+	
 
 ;-------------------------------------------------------------------------------
 CardDraw:
@@ -538,8 +897,175 @@ CardDraw:
 
 
 ;-------------------------------------------------------------------------------
-CardPileDraw:
+CardDrawClip:
+;	IN:	r12H	Card index * 2
+;		r14L	x cell
+;		r14H	y co-ord
 ;-------------------------------------------------------------------------------
+;	Draw top
+	LDX	r12H
+	LDA	CardTops0, X
+	STA	r0L
+	LDA	CardTops0 + 1, X
+	STA	r0H
+
+	LDA	r14L
+	STA	r1L
+	LDA	r14H
+	STA	r1H
+
+	LDA	#$04
+	STA	r2L
+	LDA	#$0A
+	STA	r2H
+	
+	JSR	BitmapUp
+	
+;	Draw suit
+	LDA	#$1C
+	STA	r2H
+	
+	LDA	r14H
+	CLC
+	ADC	#$0A
+	STA	r14H
+	
+	CLC
+	ADC	#$1B
+	CMP	#$C8
+	BCC	@cont0
+
+	SEC
+	LDA	#$C8
+	SBC	r14H
+	
+	STA	r2H
+
+@cont0:
+	LDX	r12H
+	LDA	Cards0, X
+	ASL
+	TAX
+
+	LDA	Suits0, X
+	STA	r0L
+	LDA	Suits0 + 1, X
+	STA	r0H
+
+	LDA	r14L
+	STA	r1L
+	LDA	r14H
+	STA	r1H
+
+	LDA	#$04
+	STA	r2L
+	
+	JSR	BitmapUp
+	
+;	Draw bottom
+	LDA	r14H
+	CLC
+	ADC	#$1C
+	STA	r14H
+
+	CMP	#$BE
+	BCS	@exit
+
+	CLC
+	ADC	#$0A
+	CMP	#$C8
+	BCC	@cont1
+
+	SEC
+	LDA	#$C8
+	SBC	r14H
+	
+	STA	r2H
+
+@cont1:
+	LDX 	r12H
+	LDA	CardBots0, X
+	STA	r0L
+	LDA	CardBots0 + 1, X
+	STA	r0H
+
+	LDA	r14L
+	STA	r1L
+	LDA	r14H
+	STA	r1H
+
+	LDA	#$04
+	STA	r2L
+	LDA	#$0A
+	STA	r2H
+	
+	JSR	BitmapUp
+
+@exit:
+	RTS
+
+
+;-------------------------------------------------------------------------------
+CardLoadPileRect:
+;-------------------------------------------------------------------------------
+;	Calc card pile y co-ord
+	LDY	#$00
+	LDA	(a0), Y		;Deal pile count
+
+	ASL
+
+	CLC
+	ADC	#CARDPILE_Y
+	
+;	STA	r14H		
+	STA	r2L		;Card pile y co-ord
+
+	LDA	r15H
+	ASL
+	TAX
+	
+	LDA	CardPileLeft0, X
+	STA	r3L
+	LDA	CardPileLeft0 + 1, X
+	STA	r3H
+
+	LDA	CardPileRight0, X
+	STA	r4L
+	LDA	CardPileRight0 + 1, X
+	STA	r4H
+
+;	LDA	r14H
+;	STA	r2L
+	LDA	#$C7
+	STA	r2H
+	
+	RTS
+
+
+;-------------------------------------------------------------------------------
+CardDrawPile:
+;	IN	a0	address of deal pile
+;		a1	address of card pile 
+;		r15H	card pile index
+;	USES	r14H	card pile y co-ord
+;		r12L	card pile count
+;		r12H	card index * 2
+;		r13L
+;		r13H
+;
+;	THIS ROUTINE NEEDS OPTIMISATION.  ALWAYS DRAWING WHOLE PILE
+;
+;-------------------------------------------------------------------------------
+	JSR	CardLoadPileRect
+	
+	LDA	r2L
+	STA	r14H
+
+	LDA	#$02
+	JSR	SetPattern
+	
+	JSR	Rectangle
+	
 	LDY	#$00
 	LDA	(a1), Y
 	BNE	@begin
@@ -567,24 +1093,62 @@ CardPileDraw:
 	LDA	r1L
 	STA	r14L		;Deal pile x co-ord
 
-;	Calc card pile y co-ord
-	LDY	#$00
-	LDA	(a0), Y		;Deal pile count
+;	Draw tops
+	LDA	#$01
+	STA	r13H
+
+	LDA	r12L
+	CMP	r13H 
+	BEQ	@last
+
+	TAX
+	DEX	
+	STX	r13L
+
+@loop0:
+	LDY	r13H
+	LDA	(a1), Y
 	ASL
+	TAX
+	
+	INC	r13H
+	INC	r13L
+	
+	LDA	CardTops0, X
+	STA	r0L
+	LDA	CardTops0 + 1, X
+	STA	r0H
+
+	LDA	r14L
+	STA	r1L
+	LDA	r14H
+	STA	r1H
+
+	LDA	#$04
+	STA	r2L
+	LDA	#$08
+	STA	r2H
+	
+	JSR	BitmapUp
 	
 	CLC
-	ADC	#CARDPILE_Y
+	LDA	r14H
+	ADC	#$08
+	STA	r14H
 	
-	STA	r14H		;Card pile y co-ord
-	
-;	Draw top
-	LDY	#$01
+	LDA	r13H
+	CMP	r12L
+	BNE	@loop0
+
+;	Draw last
+@last:
+	LDY	r12L
 	LDA	(a1), Y
 	ASL
 	
 	STA	r12H
 	
-	JSR	CardDraw
+	JSR	CardDrawClip
 
 @exit:
 	RTS
@@ -747,16 +1311,19 @@ SpareDrawDeck:
 ;-------------------------------------------------------------------------------
 FlipDrawPile:
 ;-------------------------------------------------------------------------------
+;	If last is less than current, just draw
 	LDA	GAMECORE + GAMEDATA::LastLns + 7
 	CMP	GAMECORE + GAMEDATA::FlipPl0
 	
 	BCC	@draw
 	
+;	Else if maximum, just draw
 	LDA	GAMECORE + GAMEDATA::FlipPl0
 	CMP	#FLIPCOUNT
 	
 	BEQ	@draw
 	
+;	Clear unused portion
 	ASL
 	ASL
 	ASL
@@ -828,6 +1395,459 @@ FlipUpdatePile:
 	STA	GAMECORE + GAMEDATA::DirtyPl + 7
 
 @exit:
+	RTS
+
+
+;-------------------------------------------------------------------------------
+FlipLoadLastRect:
+;-------------------------------------------------------------------------------
+	LDA	#FLIPPILE_TOP
+	STA	r2L
+	LDA	#FLIPPILE_BOTTOM
+	STA	r2H
+	LoadW	r3, FLIPPILE_LEFT
+	
+	LDX	GAMECORE + GAMEDATA::FlipPl0
+	DEX
+	TXA
+	
+	ASL
+	ASL
+	ASL
+	ASL
+	
+	CLC
+	ADC	r3L
+	STA	r3L
+	LDA	#$00
+	ADC	r3H
+	STA	r3H
+
+	CLC	
+	LDA	r3L
+	ADC	#<(CARDWIDTH - 1)
+	STA	r4L
+	LDA	r3H
+	ADC	#>(CARDWIDTH - 1)
+	STA	r4H
+
+	RTS
+	
+
+;-------------------------------------------------------------------------------
+FlipLoadLastCard:
+;	OUT	r13L	card 
+;		r15H	start pile
+;		r15L	index
+;-------------------------------------------------------------------------------
+	LDY	GAMECORE + GAMEDATA::FlipPl0
+	LDA	GAMECORE + GAMEDATA::FlipPl0, Y
+	STA	r13L
+	DEY
+	STY	r15L
+	LDA	#$07
+	STA	r15H
+	
+	RTS
+	
+
+;-------------------------------------------------------------------------------
+FlipMoveCard:
+;	IN	r13L	card 
+;		r15H	start pile
+;		r15L	index
+;		r13H	new pile
+;-------------------------------------------------------------------------------
+
+;	TODO: Set autosolve on if doing so
+
+;	Remove card from the flip pile
+	LDA	GAMECORE + GAMEDATA::FlipPl0
+	STA	GAMECORE + GAMEDATA::LastLns + 7
+	
+	DEC	GAMECORE + GAMEDATA::FlipPl0
+	
+	LDA	GAMECORE + GAMEDATA::DirtyPl + 7
+	ORA	#$80
+	STA	GAMECORE + GAMEDATA::DirtyPl + 7
+	
+;	Remove card from the spare deck (make 0 in spare deck)
+	LDX	GAMECORE + GAMEDATA::SparIdx
+	DEX
+
+@loop0:
+	BMI	@cont0
+	
+	LDA	SpareData0, X
+	BNE	@found0
+	
+	DEX
+	JMP	@loop0
+	
+@found0:
+	LDA	#$00
+	STA	SpareData0, X
+	
+@cont0:
+	LDX	r13H
+
+;	New pile is dirty
+	LDA	GAMECORE + GAMEDATA::DirtyPl, X
+	ORA	#$80
+	STA	GAMECORE + GAMEDATA::DirtyPl, X
+
+	TXA
+
+	CMP	#$08
+	BCC	@cardpile
+	
+;	Move the card to the solve pile
+	SEC
+	SBC	#$08
+	TAX
+	
+	LDA	r13L
+	STA	GAMECORE + GAMEDATA::SolvPl0, X
+	
+	JMP	@done
+	
+@cardpile:
+;	Add card to card pile
+	ASL
+	TAY
+	LDA	CardData0, Y
+	STA	a1L
+	LDA	CardData0 + 1, Y
+	STA	a1H
+	
+	LDY	#$00
+	LDA	(a1), Y
+
+	STA	GAMECORE + GAMEDATA::LastLns, X
+	
+	TAX
+	INX
+	TXA
+	STA	(a1), Y
+	
+	TAY
+	LDA	r13L
+	STA	(a1), Y
+	
+@done:
+	LDA	GAMECORE + GAMEDATA::FlipPl0
+	BEQ	@more
+	
+	RTS
+	
+@more:
+;	Get the previous spare deck cards into flip pile
+	LDY	#$00	;i:= 0
+	
+	LDX	GAMECORE + GAMEDATA::SparIdx
+	DEX			;j:= Spare Index - 1
+	
+@loop1:
+	BMI	@populate	;j < 0 then finish
+	
+	CPY	#FLIPCOUNT	
+	BCS	@populate	;i > FLIPCOUNT then finish
+	
+	LDA	SpareData0, X	
+	BEQ	@next1		;if SpareDeck[j] = 0 then skip
+	
+	INY			;Inc(i)
+	
+@next1:
+	DEX			;Dec(j)
+	JMP	@loop1
+	
+@populate:
+;	Build the flip pile with the found cards
+
+	LDA	#$01
+	STA	GAMECORE + GAMEDATA::LastLns + 7
+	STY	GAMECORE + GAMEDATA::FlipPl0
+	LDA	GAMECORE + GAMEDATA::DirtyPl + 7
+	ORA	#$80
+	STA	GAMECORE + GAMEDATA::DirtyPl + 7
+
+	LDA	#$01
+	STA	r12H	
+
+	CPY	#$00
+@loop2:
+	BEQ	@exit
+	
+	INX			;Inc(j)
+	LDA	SpareData0, X
+	BEQ	@loop2
+	
+	STX	r12L
+	LDX	r12H
+	STA	GAMECORE + GAMEDATA::FlipPl0, X
+	LDX	r12L
+
+	DEY
+	JMP	@loop2
+	
+@exit:
+	RTS
+	
+
+;-------------------------------------------------------------------------------
+GameFindCheckSolv:
+;-------------------------------------------------------------------------------
+	LDA	r15H
+	ASL
+	TAX
+	LDA	CardData0, X
+	STA	a1L
+	LDA	CardData0 + 1, X
+	STA	a1H
+	
+	LDY	#$00
+	LDA	(a1), Y
+
+	TAX
+	DEX
+
+	CPX	r15L
+	BNE	@fail
+	
+	LDX	r14L
+	BEQ	@fail
+	
+	DEX
+	LDA	GAMECORE + GAMEDATA::SolvPl0, X
+	STA	r12L		;Current suit's solve pile card
+	BNE	@testnext
+	
+	LDA	r14H
+	CMP	#$01
+	BNE	@testnext
+	
+@found:
+	TXA
+	CLC
+	ADC	#$08
+	JMP	@success
+
+@testnext:
+	LDY	r12L
+	INY
+	CPY	r13L
+	BNE	@fail
+	
+	JMP	@found
+
+@fail:
+	CLC
+	RTS
+	
+@success:
+	SEC
+	RTS
+
+
+;-------------------------------------------------------------------------------
+GameFindNextPile:
+;	IN	r13L	card 
+;		r15H	start pile
+;		r15L	index
+;	USES	r14L	card suit
+;		r14H	card face
+;	OUT	r13H	new pile
+;-------------------------------------------------------------------------------
+	LDA	r15H
+	STA	r13H
+	
+	LDA	r13L
+	ASL
+	TAX
+	LDA	Cards0, X
+	STA	r14L
+	LDA	Cards0 + 1, X
+	STA	r14H
+	
+	LDA	r15H
+	CMP	#$08
+	BCS	@begin
+	
+	JSR	GameFindCheckSolv
+	BCC	@begin
+	
+	STA	r13H
+	RTS
+	
+@begin:
+	LDA	r14L
+	CMP	#$01
+	BNE	@testhearts
+	
+@wantblack:
+	LDA	#$02
+	STA	r12L		;Lowest matching suit
+	JMP	@testpiles
+	
+@testhearts:
+	CMP	#$03
+	BEQ	@wantblack
+	
+	LDA	#$01
+	STA	r12L
+	
+@testpiles:
+	LDA 	r15H
+	STA	r12H		;tested pile index (i)
+	
+	LDA	#$00
+	STA	r11L		;testing pile counter (j)
+	
+@loop0:
+	INC	r12H
+	LDA	r12H
+	CMP	#$07
+	BCC	@cont0
+
+	LDA	#$00
+	STA	r12H
+
+@cont0:
+	ASL
+	TAX
+	LDA	CardData0, X
+	STA	a1L
+	LDA	CardData0 + 1, X
+	STA	a1H
+	
+	LDY	#$00
+	LDA	(a1), Y
+	BNE	@testcard
+	
+	LDA	r14H
+	CMP	#$0D
+	BNE	@testcard
+	
+;	Found King for empty pile
+	LDA	r12H
+	STA	r13H
+	RTS
+	
+@testcard:
+	LDY	#$00
+	LDA	(a1), Y
+	BEQ	@next0
+
+;	If matches suit
+	TAY
+	LDA	(a1), Y
+	ASL
+	TAX
+	LDA	Cards0 + 1, X
+	STA	r10H		;card pile's top card's face
+	LDA	Cards0, X
+	STA	r10L		;card pile's top card's suit
+	
+	CMP	r12L
+	BNE	@testsuit2
+	
+	JMP	@testface
+
+@testsuit2:
+	LDX	r12L
+	INX
+	INX
+	CPX	r10L
+	BNE	@next0
+	
+@testface:
+	LDX	r10H
+	BEQ	@next0
+	
+	DEX
+	CPX	r14H
+	BNE	@next0
+	
+;	Found home for card on pile
+	LDA	r12H
+	STA	r13H	
+	RTS
+
+@next0:
+	INC	r11L
+	LDA	r11L
+	CMP	#$07
+	BEQ	@exit
+	
+	JMP	@loop0
+	
+@exit:
+	RTS
+	
+	
+;-------------------------------------------------------------------------------
+GameUpdatePiles:
+;-------------------------------------------------------------------------------
+	LoadB	dispBufferOn, ST_WR_FORE 
+	
+	LDA	#$00
+	STA	r15H
+
+@loop0:
+	TAX
+	ASL
+	TAY
+	
+	LDA	GAMECORE + GAMEDATA::DirtyPl, X
+	BPL	@next0
+
+	LDA	#$00
+	STA	GAMECORE + GAMEDATA::DirtyPl, X
+
+	LDA	DealData0, Y
+	STA	a0L
+	LDA	DealData0 + 1, Y
+	STA	a0H
+	
+	LDA	CardData0, Y
+	STA	a1L
+	LDA	CardData0 + 1, Y
+	STA	a1H
+
+	JSR	CardDrawPile
+
+@next0:
+	INC	r15H
+	LDA	r15H
+	CMP	#$07
+	BNE	@loop0
+	
+	JSR	FlipUpdatePile
+	
+	LoadB	dispBufferOn, ST_WR_FORE | ST_WR_BACK
+	
+	INC	r15H
+	LDX	r15H
+	STX	r13L
+	LDA	#$00
+	STA	r15H
+
+@loop1:
+	LDA	GAMECORE + GAMEDATA::DirtyPl, X
+	BPL	@next1
+
+	JSR	SolvDrawPile
+	
+@next1:
+	INC	r15H
+	INC	r13L
+	LDX	r13L
+	CPX	#$0C
+	BNE	@loop1
+
+	LoadB	dispBufferOn, ST_WR_FORE 
+	
 	RTS
 
 
@@ -942,11 +1962,11 @@ MainMenu:
 		.byte	02 | HORIZONTAL 
 		.word	MainMenuText0
 		.byte	SUB_MENU
-		.word	MainGeos
+		.word	MainMenuGeos
 		.word	MainMenuText1
 		.byte	SUB_MENU
-		.word	MainFile
-MainGeos:
+		.word	MainMenuFile
+MainMenuGeos:
 ;-------------------------------------------------------------------------------
 		.byte	$0F
 		.byte	$1E
@@ -956,7 +1976,7 @@ MainGeos:
 		.word	MainMenuText2
 		.byte	MENU_ACTION
 		.word	DoGeosAbout
-MainFile:
+MainMenuFile:
 ;-------------------------------------------------------------------------------
 		.byte	$0F
 		.byte	$38
@@ -986,6 +2006,25 @@ MainMenuText5:
 		.byte	"quit", $00
 
 
+CardPileLeft0:
+		.word	CARDPLE0_LEFT
+		.word	CARDPLE1_LEFT
+		.word	CARDPLE2_LEFT
+		.word	CARDPLE3_LEFT
+		.word	CARDPLE4_LEFT
+		.word	CARDPLE5_LEFT
+		.word	CARDPLE6_LEFT
+		
+CardPileRight0:
+		.word	CARDPLE0_RIGHT
+		.word	CARDPLE1_RIGHT
+		.word	CARDPLE2_RIGHT
+		.word	CARDPLE3_RIGHT
+		.word	CARDPLE4_RIGHT
+		.word	CARDPLE5_RIGHT
+		.word	CARDPLE6_RIGHT
+
+
 ;-------------------------------------------------------------------------------
 	.include	"cards.inc"
 ;-------------------------------------------------------------------------------
@@ -1010,6 +2049,7 @@ CardData0:
 	.word	GAMECORE + GAMEDATA::CardPl4
 	.word	GAMECORE + GAMEDATA::CardPl5
 	.word	GAMECORE + GAMEDATA::CardPl6
+	.word	GAMECORE + GAMEDATA::FlipPl0
 
 DeckData0:
 ;-------------------------------------------------------------------------------
