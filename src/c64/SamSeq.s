@@ -23,15 +23,15 @@ CARDHEIGHT	=	6 * 8
 
 SPAREDEK_X	=	$23
 SPAREDEK_TOP 	=	TOPPILES_Y 	
-SPAREDEK_BOTTOM = 	SPAREDEK_TOP + (6 * 8) - 1
+SPAREDEK_BOTTOM = 	SPAREDEK_TOP + CARDHEIGHT- 1
 SPAREDEK_LEFT	=	SPAREDEK_X * 8
-SPAREDEK_RIGHT	=	SPAREDEK_LEFT + (4 * 8) - 1
+SPAREDEK_RIGHT	=	SPAREDEK_LEFT + CARDWIDTH - 1
 
 FLIPCOUNT	=	3
 
 FLIPCRD0_X	=	$1A
 FLIPPILE_TOP	=	TOPPILES_Y
-FLIPPILE_BOTTOM = 	FLIPPILE_TOP + (6 * 8) - 1
+FLIPPILE_BOTTOM = 	FLIPPILE_TOP + CARDHEIGHT - 1
 FLIPPILE_LEFT	=	FLIPCRD0_X * 8
 FLIPPILE_RIGHT	=	FLIPPILE_LEFT + (8 * 8) - 1
 	
@@ -40,7 +40,7 @@ CARDPLE0_X	=	$02
 CARDPLE0_TOP	=	CARDPILE_Y
 CARDPLE0_BOTTOM	=	$C7
 CARDPLE0_LEFT	=	CARDPLE0_X * 8
-CARDPLE0_RIGHT	=	CARDPLE0_LEFT + (4 * 8) - 1
+CARDPLE0_RIGHT	=	CARDPLE0_LEFT + CARDWIDTH - 1
 CARDPLE1_LEFT	=	CARDPLE0_LEFT + (5 * 8)
 CARDPLE1_RIGHT	=	CARDPLE0_RIGHT + (5 * 8)
 CARDPLE2_LEFT	=	CARDPLE1_LEFT + (5 * 8)
@@ -54,7 +54,20 @@ CARDPLE5_RIGHT	=	CARDPLE4_RIGHT + (5 * 8)
 CARDPLE6_LEFT	=	CARDPLE5_LEFT + (5 * 8)
 CARDPLE6_RIGHT	=	CARDPLE5_RIGHT + (5 * 8)
 
-	
+SOLVPILE_Y	=	TOPPILES_Y
+SOLVPLE0_X	=	$01
+SOLVPLE0_TOP	=	SOLVPILE_Y
+SOLVPLE0_BOTTOM	=	SOLVPILE_Y + CARDHEIGHT - 1
+SOLVPLE0_LEFT	=	SOLVPLE0_X * 8
+SOLVPLE0_RIGHT 	=	SOLVPLE0_LEFT + CARDWIDTH - 1
+SOLVPLE1_LEFT	=	SOLVPLE0_LEFT + CARDWIDTH + 8
+SOLVPLE1_RIGHT 	=	SOLVPLE0_RIGHT + CARDWIDTH + 8
+SOLVPLE2_LEFT	=	SOLVPLE1_LEFT + CARDWIDTH + 8
+SOLVPLE2_RIGHT 	=	SOLVPLE1_RIGHT + CARDWIDTH + 8
+SOLVPLE3_LEFT	=	SOLVPLE2_LEFT + CARDWIDTH + 8
+SOLVPLE3_RIGHT 	=	SOLVPLE2_RIGHT + CARDWIDTH + 8
+
+
 	.struct		DEALPILE
 		Length	.byte
 		_0	.byte
@@ -235,8 +248,11 @@ HookPressVec:
 
 	LDA	r15H
 	CMP	r13H
-	BEQ	@exit
+	BNE	@flip1
+	
+	JMP	@exit
 
+@flip1:
 	JSR	InvertRectangle
 	
 	JSR	FlipMoveCard
@@ -296,6 +312,51 @@ HookPressVec:
 	BNE	@loop0
 	
 @solv0:
+	LDA	#$08
+	STA	r15H
+	
+@loop1:
+	JSR	SolvLoadPileRect
+	
+	JSR	IsMseInRegion
+	CMP	#TRUE
+	BNE	@next1
+	
+	LDA	r15H
+	SEC
+	SBC	#$08
+	TAX
+	LDA	GAMECORE + GAMEDATA::SolvPl0, X
+	
+	STA	r13L
+	ASL
+	TAX
+	LDA	Cards0 + 1, X
+	
+	CMP	#$02
+	BCC	@exit
+	
+	LDA	#$00
+	STA	r15L
+	
+	JSR	GameFindNextPile
+
+	LDA	r15H
+	CMP	r13H
+	BEQ	@exit
+	
+	JSR	InvertRectangle
+
+	JSR	SolvMoveCard
+	
+	JMP	@update
+	
+@next1:
+	INC	r15H
+	LDA	r15H
+	CMP	#$0C
+	BNE	@loop1
+	
 	JMP	@exit
 	
 @update:
@@ -1155,6 +1216,80 @@ CardDrawPile:
 
 
 ;-------------------------------------------------------------------------------
+SolvMoveCard:
+;-------------------------------------------------------------------------------
+	LDX	r15H
+	
+	LDA	GAMECORE + GAMEDATA::DirtyPl, X
+	ORA	#$80
+	STA	GAMECORE + GAMEDATA::DirtyPl, X
+	
+	LDX	r13H
+
+	LDA	GAMECORE + GAMEDATA::DirtyPl, X
+	ORA	#$80
+	STA	GAMECORE + GAMEDATA::DirtyPl, X
+
+	TXA
+	ASL
+	TAX
+	LDA	CardData0, X
+	STA	a1L
+	LDA	CardData0 + 1, X
+	STA	a1H
+	
+	LDY	#$00
+	LDA	(a1), Y
+	
+	STA	GAMECORE + GAMEDATA::LastLns, X
+	
+	TAX
+	INX
+	TXA
+	STA	(a1), Y
+	TAY
+	LDA	r13L
+	STA	(a1), Y
+
+	LDA	r15H
+	SEC
+	SBC	#$08
+	TAX
+	
+	DEC	GAMECORE + GAMEDATA::SolvPl0, X
+	
+	RTS
+	
+
+;-------------------------------------------------------------------------------
+SolvLoadPileRect:
+;-------------------------------------------------------------------------------
+	LDA	r15H
+	SEC
+	SBC	#$08
+	ASL
+	TAX
+
+	LDA	#SOLVPLE0_TOP
+	STA	r2L		;pile y co-ord
+
+	LDA	#SOLVPLE0_BOTTOM
+	STA	r2H
+
+	LDA	SolvPileLeft0, X
+	STA	r3L
+	LDA	SolvPileLeft0 + 1, X
+	STA	r3H
+
+	LDA	SolvPileRight0, X
+	STA	r4L
+	LDA	SolvPileRight0 + 1, X
+	STA	r4H
+
+	RTS
+
+
+;-------------------------------------------------------------------------------
 SolvDrawPile:
 ;-------------------------------------------------------------------------------
 	LDX	r15H		;Solve pile index
@@ -1551,7 +1686,7 @@ FlipMoveCard:
 	BMI	@populate	;j < 0 then finish
 	
 	CPY	#FLIPCOUNT	
-	BCS	@populate	;i > FLIPCOUNT then finish
+	BCS	@populate	;i >= FLIPCOUNT then finish
 	
 	LDA	SpareData0, X	
 	BEQ	@next1		;if SpareDeck[j] = 0 then skip
@@ -1587,6 +1722,7 @@ FlipMoveCard:
 	LDX	r12H
 	STA	GAMECORE + GAMEDATA::FlipPl0, X
 	LDX	r12L
+	INC	r12H
 
 	DEY
 	JMP	@loop2
@@ -2023,6 +2159,18 @@ CardPileRight0:
 		.word	CARDPLE4_RIGHT
 		.word	CARDPLE5_RIGHT
 		.word	CARDPLE6_RIGHT
+
+SolvPileLeft0:
+		.word	SOLVPLE0_LEFT
+		.word	SOLVPLE1_LEFT
+		.word	SOLVPLE2_LEFT
+		.word	SOLVPLE3_LEFT
+		
+SolvPileRight0:
+		.word	SOLVPLE0_RIGHT
+		.word	SOLVPLE1_RIGHT
+		.word	SOLVPLE2_RIGHT
+		.word	SOLVPLE3_RIGHT
 
 
 ;-------------------------------------------------------------------------------
