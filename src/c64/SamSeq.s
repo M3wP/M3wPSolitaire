@@ -848,13 +848,13 @@ CardDraw:
 	STA	r14H
 	
 	LDX	r12H
-	LDA	Cards0, X
-	ASL
-	TAX
+;	LDA	Cards0, X
+;	ASL
+;	TAX
 
-	LDA	Suits0, X
+	LDA	CardSuits0, X
 	STA	r0L
-	LDA	Suits0 + 1, X
+	LDA	CardSuits0 + 1, X
 	STA	r0H
 
 	LDA	r14L
@@ -943,13 +943,13 @@ CardDrawClip:
 
 @cont0:
 	LDX	r12H
-	LDA	Cards0, X
-	ASL
-	TAX
+;	LDA	Cards0, X
+;	ASL
+;	TAX
 
-	LDA	Suits0, X
+	LDA	CardSuits0, X
 	STA	r0L
-	LDA	Suits0 + 1, X
+	LDA	CardSuits0 + 1, X
 	STA	r0H
 
 	LDA	r14L
