@@ -157,6 +157,8 @@ SOLVPLE3_RIGHT 	=	SOLVPLE2_RIGHT + CARDWIDTH + 8
 		DirtyPl	.tag	DIRTYPILES
 		LastLns	.tag	LASTLENPILES
 		SparIdx .byte	
+		AutoCan	.byte
+		AutoEnb	.byte
 	.endstruct
 
 	.assert .sizeof(GAMEDATA) < 193, error, "GANEDATA too large!"
@@ -186,6 +188,13 @@ Main:
 	LoadW	r0, MainMenu		;point to menu definition table
 	LDA	#0			;place cursor on first menu item when done
 	JSR	DoMenu			;have GEOS draw the menus on the screen
+
+	LDA	#TRUE
+	STA	GAMECORE + GAMEDATA::AutoEnb
+
+	LoadW	r0, ProcessData0
+	LDA	#$01
+	JSR	InitProcesses
 
 	JSR	GameInit
 
@@ -275,6 +284,9 @@ HookPressVec:
 	STA	a1L
 	LDA	CardData0 + 1, X
 	STA	a1H
+
+	LDA	#$FF
+	STA	r15L
 
 	JSR	CardLoadPileRect
 	
@@ -632,8 +644,8 @@ CardMoveCard:
 ;		a0	deal pile
 ;		a1	card pile
 ;-------------------------------------------------------------------------------
-
-;	TODO: Set autosolve on if doing so
+	LDA	GAMECORE + GAMEDATA::AutoEnb
+	STA	GAMECORE + GAMEDATA::AutoCan
 
 	LDY	#$00
 	LDA	(a1), Y
@@ -787,6 +799,7 @@ CardMoveCard:
 ;-------------------------------------------------------------------------------
 CardFindMseCard:
 ;	IN	r15H	pile index
+;		r15L	pile card index
 ;		a0	deal pile
 ;		a1	card pile
 ;		r2	
@@ -1095,9 +1108,45 @@ CardLoadPileRect:
 	LDA	CardPileRight0 + 1, X
 	STA	r4H
 
+	LDA	r15L
+	BPL	@last
+
 ;	LDA	r14H
 ;	STA	r2L
 	LDA	#$C7
+	STA	r2H
+	
+	RTS
+	
+@last:
+	LDA	r2L
+	STA	r11L
+
+	LDA	r15L
+	STA	r2L
+	LDA	#$08
+	STA	r1L
+	
+	LDX	#r1
+	LDY	#r2
+	
+	JSR	BBMult
+	
+	LDA	r1L
+	CLC
+	ADC	r11L
+	
+	STA	r2L
+	
+	CLC
+	ADC	#(CARDHEIGHT - 1)
+	
+	CMP	#$C8
+	BCC	@done
+	
+	LDA	#$C7
+	
+@done:
 	STA	r2H
 	
 	RTS
@@ -1117,7 +1166,15 @@ CardDrawPile:
 ;	THIS ROUTINE NEEDS OPTIMISATION.  ALWAYS DRAWING WHOLE PILE
 ;
 ;-------------------------------------------------------------------------------
+	LDA	r15L
+	STA	r11L
+	
+	LDA	#$FF
+	STA	r15L
 	JSR	CardLoadPileRect
+	
+	LDA	r11L
+	STA	r15L
 	
 	LDA	r2L
 	STA	r14H
@@ -1218,6 +1275,9 @@ CardDrawPile:
 ;-------------------------------------------------------------------------------
 SolvMoveCard:
 ;-------------------------------------------------------------------------------
+	LDA	#FALSE
+	STA	GAMECORE + GAMEDATA::AutoCan
+
 	LDX	r15H
 	
 	LDA	GAMECORE + GAMEDATA::DirtyPl, X
@@ -1292,6 +1352,14 @@ SolvLoadPileRect:
 ;-------------------------------------------------------------------------------
 SolvDrawPile:
 ;-------------------------------------------------------------------------------
+	LDA	r15H		;Solve pile index
+	CLC
+	ADC	#$08
+	TAX	
+
+	LDA	#$00
+	STA	GAMECORE + GAMEDATA::DirtyPl, X
+
 	LDX	r15H		;Solve pile index
 	LDA	GAMECORE + GAMEDATA::SolvPl0, X
 	
@@ -1593,8 +1661,8 @@ FlipMoveCard:
 ;		r15L	index
 ;		r13H	new pile
 ;-------------------------------------------------------------------------------
-
-;	TODO: Set autosolve on if doing so
+	LDA	GAMECORE + GAMEDATA::AutoEnb
+	STA	GAMECORE + GAMEDATA::AutoCan
 
 ;	Remove card from the flip pile
 	LDA	GAMECORE + GAMEDATA::FlipPl0
@@ -1993,6 +2061,12 @@ GameInit:
 	JSR	DeckShuffle
 ;-------------------------------------------------------------------------------
 GameStart:
+	LDA	GAMECORE + GAMEDATA::AutoEnb
+	STA	GAMECORE + GAMEDATA::AutoCan
+
+	LDX	#$00
+	JSR	BlockProcess
+
 	LoadB	dispBufferOn, ST_WR_FORE
 	
 	JSR	DeckDeal
@@ -2010,9 +2084,133 @@ GameStart:
 	JSR	FlipDrawPile
 
 	LoadB	dispBufferOn, ST_WR_FORE | ST_WR_BACK
+
+	LDX	#$00
+	JSR	RestartProcess
 	
 	RTS
 
+
+;-------------------------------------------------------------------------------
+ProcAutoSolve:
+;-------------------------------------------------------------------------------
+	LDA	GAMECORE + GAMEDATA::AutoCan
+	CMP	#TRUE
+	BEQ	@begin
+	
+	RTS
+
+@begin:
+	LDA	#$00
+	STA	r15H
+	
+@loop:
+	ASL
+	TAX
+	LDA	DealData0, X
+	STA	a0L
+	LDA	DealData0 + 1, X
+	STA	a0H
+	LDA	CardData0, X
+	STA	a1L
+	LDA	CardData0 + 1, X
+	STA	a1H
+	
+	LDY	#$00
+	LDA	(a1), Y
+	
+	BEQ	@next
+	
+	TAY
+	LDA	(a1), Y
+	
+	STA	r13L
+	
+	ASL
+	TAX
+	LDA	Cards0, X
+	BEQ	@next
+	
+	STA	r14L
+	
+	LDA	Cards0 + 1, X
+	STA	r14H
+	
+	LDX	r14L
+	DEX
+	TXA
+	
+	CLC
+	ADC	#$08
+	STA	r13H
+	
+	LDA	GAMECORE + GAMEDATA::SolvPl0, X
+	ASL
+	TAX
+	LDA	Cards0 + 1, X
+	TAX
+	INX
+	
+	CPX	r14H
+	BEQ	@found
+	
+@next:
+	INC	r15H
+	LDA	r15H
+	CMP	#$07
+	BNE	@loop
+	
+	RTS
+	
+@found:
+	LDY	#$00
+	LDA	(a1), Y
+	TAX
+	DEX
+	STX	r15L
+	JSR	CardLoadPileRect
+	
+	JSR	InvertRectangle
+	
+	LDX	r13H
+	LDA	GAMECORE + GAMEDATA::DirtyPl, X
+	ORA	#$80
+	STA	GAMECORE + GAMEDATA::DirtyPl, X
+	
+	LDX	r14L
+	DEX
+	LDA	r13L
+	STA	GAMECORE + GAMEDATA::SolvPl0, X
+
+	LDX	r15H
+	LDA	GAMECORE + GAMEDATA::DirtyPl, X
+	ORA	#$80
+	STA	GAMECORE + GAMEDATA::DirtyPl, X
+
+	LDY	#$00
+	LDA	(a1), Y
+	
+	STA	GAMECORE + GAMEDATA::LastLns, X
+		
+	TAX
+	DEX
+	TXA
+	STA	(a1), Y
+	
+	BNE	@update
+	
+	LDY	#$00
+	LDA	(a0),Y
+	
+	BEQ	@update
+	
+	JSR	DealPopCard
+	
+@update:
+	JSR	GameUpdatePiles
+
+	RTS
+		
 
 ;Event handler routines: are called by GEOS when an event happens,
 ;such as user selecting a menu item or clicking on an icon.
@@ -2071,6 +2269,46 @@ DoQuit:
 	jmp	EnterDeskTop		;return to deskTop!
 
 
+;-------------------------------------------------------------------------------
+DoOptionsAuto:
+;-------------------------------------------------------------------------------
+	JSR	GotoFirstMenu
+	
+	LDA	GAMECORE + GAMEDATA::AutoEnb
+	CMP	#TRUE
+	BNE	@turnon
+	
+	LDA	#FALSE
+	STA	GAMECORE + GAMEDATA::AutoEnb
+	STA	GAMECORE + GAMEDATA::AutoCan
+	
+	LDA	#<MainMenuText8
+	STA	MenuAutoText0
+	LDA	#>MainMenuText8
+	STA	MenuAutoText0 + 1
+	
+	RTS
+	
+@turnon:
+	LDA	#TRUE
+	STA	GAMECORE + GAMEDATA::AutoEnb
+	STA	GAMECORE + GAMEDATA::AutoCan
+	
+	LDA	#<MainMenuText7
+	STA	MenuAutoText0
+	LDA	#>MainMenuText7
+	STA	MenuAutoText0 + 1
+
+	RTS
+
+
+;-------------------------------------------------------------------------------
+DoOptionsFlip:
+;-------------------------------------------------------------------------------
+	jsr	GotoFirstMenu
+	rts
+
+
 
 ;-------------------------------------------------------------------------------
 ;DATA SECTION
@@ -2094,14 +2332,17 @@ MainMenu:
 		.byte	$00
 		.byte	$0E
 		.word	$0000
-		.word	$0031
-		.byte	02 | HORIZONTAL 
+		.word	$0058
+		.byte	03 | HORIZONTAL
 		.word	MainMenuText0
 		.byte	SUB_MENU
 		.word	MainMenuGeos
 		.word	MainMenuText1
 		.byte	SUB_MENU
 		.word	MainMenuFile
+		.word	MainMenuText2
+		.byte	SUB_MENU
+		.word	MainMenuOptions
 MainMenuGeos:
 ;-------------------------------------------------------------------------------
 		.byte	$0F
@@ -2109,7 +2350,7 @@ MainMenuGeos:
 		.word	$0000
 		.word	$0027
 		.byte	01 | VERTICAL | CONSTRAINED
-		.word	MainMenuText2
+		.word	MainMenuText3
 		.byte	MENU_ACTION
 		.word	DoGeosAbout
 MainMenuFile:
@@ -2119,27 +2360,52 @@ MainMenuFile:
 		.word	$001C
 		.word	$0041
 		.byte	03 | VERTICAL | CONSTRAINED
-		.word	MainMenuText3
-		.byte	MENU_ACTION
-		.word	DoFileNew
 		.word	MainMenuText4
 		.byte	MENU_ACTION
-		.word	DoFileRestart
+		.word	DoFileNew
 		.word	MainMenuText5
 		.byte	MENU_ACTION
+		.word	DoFileRestart
+		.word	MainMenuText6
+		.byte	MENU_ACTION
 		.word	DoFileQuit
+MainMenuOptions:
+;-------------------------------------------------------------------------------
+		.byte	$0F
+		.byte	$2D
+		.word	$0030
+		.word	$007D
+		.byte	02 | VERTICAL | CONSTRAINED
+MenuAutoText0:
+		.word	MainMenuText7
+		.byte	MENU_ACTION
+		.word	DoOptionsAuto
+MenuFlipText0:
+		.word	MainMenuText9
+		.byte	MENU_ACTION
+		.word	DoOptionsFlip
 MainMenuText0:
 		.byte	"geos", $00
 MainMenuText1:
 		.byte	"file", $00
 MainMenuText2:
-		.byte	"about", $00
+		.byte	"options", $00
 MainMenuText3:
-		.byte	"new", $00
+		.byte	"about", $00
 MainMenuText4:
-		.byte	"restart", $00
+		.byte	"new", $00
 MainMenuText5:
+		.byte	"restart", $00
+MainMenuText6:
 		.byte	"quit", $00
+MainMenuText7:
+		.byte	"auto solve: on", $00
+MainMenuText8:
+		.byte	"auto solve: off", $00
+MainMenuText9:
+		.byte	"flip count: 3", $00
+MainMenuTextA:
+		.byte	"flip count: 1", $00
 
 
 CardPileLeft0:
@@ -2198,6 +2464,13 @@ CardData0:
 	.word	GAMECORE + GAMEDATA::CardPl5
 	.word	GAMECORE + GAMEDATA::CardPl6
 	.word	GAMECORE + GAMEDATA::FlipPl0
+
+
+ProcessData0:
+;-------------------------------------------------------------------------------
+	.word	ProcAutoSolve
+	.word	$1E
+
 
 DeckData0:
 ;-------------------------------------------------------------------------------
