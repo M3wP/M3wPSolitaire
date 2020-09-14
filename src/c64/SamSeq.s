@@ -834,10 +834,10 @@ CardFindMseCard:
 	
 @cont0:
 	STA	r2H
-	CMP	#$C8
+	CMP	#$C0
 	BCC	@cont1
 	
-	LDA	#$C7
+	LDA	#$BF
 	STA	r2H
 	
 @cont1:
@@ -1037,22 +1037,29 @@ CardDrawClip:
 	JSR	BitmapUp
 	
 ;	Draw bottom
+	LDA	#$0A
+	STA	r2H
+
 	LDA	r14H
 	CLC
 	ADC	#$1C
 	STA	r14H
 
-	CMP	#$BE
+;	CMP	#$C7		;Should negate the need to check neg
+	CMP	#$BF
 	BCS	@exit
 
 	CLC
-	ADC	#$0A
-	CMP	#$C8
+	ADC	#$0A	
+	CMP	#$C0		;C8
 	BCC	@cont1
 
 	SEC
-	LDA	#$C8
+	LDA	#$C0		;C8
 	SBC	r14H
+	
+	BCC	@exit		;Do it anyway
+	BEQ	@exit
 	
 	STA	r2H
 
@@ -1070,8 +1077,8 @@ CardDrawClip:
 
 	LDA	#$04
 	STA	r2L
-	LDA	#$0A
-	STA	r2H
+;	LDA	#$0A
+;	STA	r2H
 	
 	JSR	BitmapUp
 
@@ -1141,10 +1148,10 @@ CardLoadPileRect:
 	CLC
 	ADC	#(CARDHEIGHT - 1)
 	
-	CMP	#$C8
+	CMP	#$C0
 	BCC	@done
 	
-	LDA	#$C7
+	LDA	#$BF
 	
 @done:
 	STA	r2H
@@ -1442,20 +1449,26 @@ SpareSetFlipDirty:
 ;-------------------------------------------------------------------------------
 SpareDeckClick:
 ;-------------------------------------------------------------------------------
-@loop0:
 	LDX	GAMECORE + GAMEDATA::SparIdx
+	JMP	@test0
+@loop0:
 	LDA	SpareData0, X
 	BNE	@flip0
 	
 	INX
-	TXA
-	STA	GAMECORE + GAMEDATA::SparIdx
-	CMP	#$18
+	STX	GAMECORE + GAMEDATA::SparIdx
+@test0:
+	CPX	#$18
 	BCC	@loop0
 	
 	LDA	#$00
 	STA	r12L
 	STA	GAMECORE + GAMEDATA::SparIdx
+	
+;	DEBUG
+	STA	GAMECORE + GAMEDATA::FlipPl0 + 1
+	STA	GAMECORE + GAMEDATA::FlipPl0 + 2
+	STA	GAMECORE + GAMEDATA::FlipPl0 + 3
 	
 	JSR	SpareSetFlipDirty
 	
@@ -1679,7 +1692,7 @@ FlipMoveCard:
 	DEX
 
 @loop0:
-	BMI	@cont0
+	BMI	@cont0		;This should panic
 	
 	LDA	SpareData0, X
 	BNE	@found0
@@ -1744,6 +1757,12 @@ FlipMoveCard:
 	RTS
 	
 @more:
+;	DEBUG
+	LDA	#$00
+	STA	GAMECORE + GAMEDATA::FlipPl0 + 1
+	STA	GAMECORE + GAMEDATA::FlipPl0 + 2
+	STA	GAMECORE + GAMEDATA::FlipPl0 + 3
+
 ;	Get the previous spare deck cards into flip pile
 	LDY	#$00	;i:= 0
 	
@@ -1782,9 +1801,10 @@ FlipMoveCard:
 @loop2:
 	BEQ	@exit
 	
+@loop2a:
 	INX			;Inc(j)
 	LDA	SpareData0, X
-	BEQ	@loop2
+	BEQ	@loop2a
 	
 	STX	r12L
 	LDX	r12H
@@ -2163,6 +2183,8 @@ ProcAutoSolve:
 	RTS
 	
 @found:
+	LoadB	dispBufferOn, ST_WR_FORE
+	
 	LDY	#$00
 	LDA	(a1), Y
 	TAX
@@ -2208,6 +2230,8 @@ ProcAutoSolve:
 	
 @update:
 	JSR	GameUpdatePiles
+
+	LoadB	dispBufferOn, ST_WR_FORE | ST_WR_BACK
 
 	RTS
 		
@@ -2349,7 +2373,7 @@ MainMenuGeos:
 		.byte	$1E
 		.word	$0000
 		.word	$0027
-		.byte	01 | VERTICAL | CONSTRAINED
+		.byte	01 | VERTICAL 	; | CONSTRAINED
 		.word	MainMenuText3
 		.byte	MENU_ACTION
 		.word	DoGeosAbout
@@ -2359,7 +2383,7 @@ MainMenuFile:
 		.byte	$38
 		.word	$001C
 		.word	$0041
-		.byte	03 | VERTICAL | CONSTRAINED
+		.byte	03 | VERTICAL 	; | CONSTRAINED
 		.word	MainMenuText4
 		.byte	MENU_ACTION
 		.word	DoFileNew
@@ -2375,7 +2399,7 @@ MainMenuOptions:
 		.byte	$2D
 		.word	$0030
 		.word	$007D
-		.byte	02 | VERTICAL | CONSTRAINED
+		.byte	02 | VERTICAL 	; | CONSTRAINED
 MenuAutoText0:
 		.word	MainMenuText7
 		.byte	MENU_ACTION
