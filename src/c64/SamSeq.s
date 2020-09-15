@@ -16,6 +16,8 @@
 
 GAMECORE	=	$7F40
 
+COLOURCLEAR	=	$BF
+
 TOPPILES_Y	=	$10
 
 CARDWIDTH	=	4 * 8
@@ -27,15 +29,15 @@ SPAREDEK_BOTTOM = 	SPAREDEK_TOP + CARDHEIGHT- 1
 SPAREDEK_LEFT	=	SPAREDEK_X * 8
 SPAREDEK_RIGHT	=	SPAREDEK_LEFT + CARDWIDTH - 1
 
-FLIPCOUNT	=	3
-
 FLIPCRD0_X	=	$1A
 FLIPPILE_TOP	=	TOPPILES_Y
 FLIPPILE_BOTTOM = 	FLIPPILE_TOP + CARDHEIGHT - 1
 FLIPPILE_LEFT	=	FLIPCRD0_X * 8
 FLIPPILE_RIGHT	=	FLIPPILE_LEFT + (8 * 8) - 1
 	
-CARDPILE_Y	=	$48
+DEALPILE_Y	=	$40
+	
+CARDPILE_Y	=	$50
 CARDPLE0_X	=	$02
 CARDPLE0_TOP	=	CARDPILE_Y
 CARDPLE0_BOTTOM	=	$C7
@@ -196,6 +198,12 @@ Main:
 	LDA	#$01
 	JSR	InitProcesses
 
+	LDA	COLOR_MATRIX
+	STA	ColourOrg0
+	
+	LDA	#COLOURCLEAR
+	JSR	MainFillColour
+
 	JSR	GameInit
 
 	LDA	#<HookPressVec
@@ -204,6 +212,28 @@ Main:
 	STA	otherPressVec + 1
 
 	RTS
+
+
+;-------------------------------------------------------------------------------
+MainFillColour:
+;-------------------------------------------------------------------------------
+	LDX	#$00
+@loop0:
+	STA	COLOR_MATRIX, X
+	STA	COLOR_MATRIX + 256, X
+	STA	COLOR_MATRIX + 512, X
+	INX
+	BNE	@loop0
+	
+	LDX	#$00
+@loop1:
+	STA	COLOR_MATRIX + 768, X
+	INX
+	CPX	#$E8
+	BNE	@loop1
+	
+	RTS
+	
 
 ;-------------------------------------------------------------------------------
 HookPressVec:
@@ -499,7 +529,7 @@ DeckDeal:
 
 	JSR	DealPopCard
 
-	JSR	DealDrawPile
+;	JSR	DealDrawPile
 	
 	JSR	CardDrawPile
 	
@@ -546,7 +576,8 @@ DealPopCard:
 	
 	TAY
 	LDA	(a0), Y
-	STA	r12L		;Card index
+;	STA	r11L		;Card index
+	PHA
 
 ;	Decrement deal count
 	LDY	#$00		
@@ -556,6 +587,9 @@ DealPopCard:
 	DEX
 	TXA
 	STA	(a0), Y
+	
+	JSR	DealDrawPile
+
 
 ;	Update card pile last len, dirty
 	LDX	r15H		;Deal pile index
@@ -572,7 +606,8 @@ DealPopCard:
 	STA	(a1), Y		;Card pile data
 	
 	INY
-	LDA	r12L
+;	LDA	r11L
+	PLA
 	STA	(a1), Y
 	
 	RTS
@@ -583,8 +618,8 @@ DealDrawPile:
 ;-------------------------------------------------------------------------------
 	LDY	#$00
 	LDA	(a0), Y
-	BEQ	@exit
-	
+;	BEQ	@exit
+
 	STA	r12L		;Deal pile count
 	
 	LDA	r15H		;Deal pile index
@@ -603,8 +638,84 @@ DealDrawPile:
 	
 	LDA	r1L
 	STA	r14L		;Deal pile x co-ord
-	LDA	#CARDPILE_Y
+	LDA	#DEALPILE_Y
 	STA	r14H		;Deal pile y co-ord
+	
+	LDY	#$00
+	LDA	(a0), Y
+	BEQ	@clear
+	
+	JMP	@pile0
+	
+@clear:
+	LDA	r14L
+	STA	r2L
+	LDA	#$08
+	STA	r1L
+	LDA	#$00
+	STA	r1H
+	
+	LDX	#r1
+	LDY	#r2
+	
+	JSR	BMult	
+
+	CLC
+	LDA	r1L
+	STA	r3L
+	ADC	#<(CARDWIDTH - 1)
+	STA	r4L
+
+	LDA	r1H
+	STA	r3H
+	ADC	#>(CARDWIDTH - 1)
+	STA	r4H
+
+	LDA	r14H
+	STA	r2L
+	CLC
+	ADC	#$10
+	STA	r2H
+
+	LDA	#$02
+	JSR	SetPattern
+	
+	JSR	Rectangle
+	
+;	IN	r9L	colour 
+;		r9H	top 
+;		r8L	row count
+;		r14L 	left col
+
+	LDA	#COLOURCLEAR
+	STA	r9L
+
+	LDX	#(DEALPILE_Y / 8)
+	STX	r9H
+	
+	LDA	#$02
+	STA	r8L
+	
+	JSR	CardDrawColour
+	
+	RTS
+	
+@pile0:
+;	IN	r9L	colour 
+;		r9H	top 
+;		r8L	row count
+;		r14L 	left col
+
+	LDA	SuitColours0 + 5
+	STA	r9L
+
+	LDX	#(DEALPILE_Y / 8)
+	STX	r9H
+	
+	LDA	#$02
+	STA	r8L
+	
+	JSR	CardDrawColour
 	
 @loop0:
 	LDA	#<CardTopBK
@@ -617,14 +728,23 @@ DealDrawPile:
 	LDA	r14H
 	STA	r1H
 
+	LDA	#$04
+	STA	r2L
+	
+	LDA	r12L
+	CMP	#$01
+	BNE	@cont0
+	
+	JMP	@tail
+	
+@cont0:
 	INC 	r14H
 	INC	r14H
 	
-	LDA	#$04
-	STA	r2L
 	LDA	#$02
 	STA	r2H
 	
+@draw0:
 	JSR	BitmapUp
 	
 	DEC	r12L
@@ -633,6 +753,59 @@ DealDrawPile:
 @exit:
 	RTS
 
+@tail:
+	LDY	#$00
+	LDA	(a0), Y
+	TAX
+	DEX
+	TXA
+	ASL
+	STA	r2H
+	SEC
+	LDA	#$10
+	SBC	r2H
+	STA	r2H
+	
+	CMP	#$0B
+	BCS	@multi
+	
+	JSR	BitmapUp
+
+	RTS
+	
+@multi:
+	SEC
+	SBC	#$0A
+	STA	r12L
+	
+	LDA	#$0A
+	STA	r2H
+	
+	JSR	BitmapUp
+	
+	LDA	#<SuitBK
+	STA	r0L
+	LDA	#>SuitBK
+	STA	r0H
+	
+	LDA	r14L
+	STA	r1L
+
+	LDA	r14H
+	CLC
+	ADC	#$0A
+	STA	r1H
+
+	LDA	#$04
+	STA	r2L
+	
+	LDA	r12L
+	STA	r2H
+	
+	JSR	BitmapUp
+	
+	RTS
+	
 
 ;-------------------------------------------------------------------------------
 CardMoveCard:
@@ -1045,17 +1218,16 @@ CardDrawClip:
 	ADC	#$1C
 	STA	r14H
 
-;	CMP	#$C7		;Should negate the need to check neg
-	CMP	#$BF
+	CMP	#$C7
 	BCS	@exit
 
 	CLC
 	ADC	#$0A	
-	CMP	#$C0		;C8
+	CMP	#$C8		
 	BCC	@cont1
 
 	SEC
-	LDA	#$C0		;C8
+	LDA	#$C8		
 	SBC	r14H
 	
 	BCC	@exit		;Do it anyway
@@ -1090,13 +1262,15 @@ CardDrawClip:
 CardLoadPileRect:
 ;-------------------------------------------------------------------------------
 ;	Calc card pile y co-ord
-	LDY	#$00
-	LDA	(a0), Y		;Deal pile count
+;	LDY	#$00
+;	LDA	(a0), Y		;Deal pile count
+;
+;	ASL
+;
+;	CLC
+;	ADC	#CARDPILE_Y
 
-	ASL
-
-	CLC
-	ADC	#CARDPILE_Y
+	LDA	#CARDPILE_Y
 	
 ;	STA	r14H		
 	STA	r2L		;Card pile y co-ord
@@ -1191,6 +1365,42 @@ CardDrawPile:
 	
 	JSR	Rectangle
 	
+;	IN	r9L	colour 
+;		r9H	top 
+;		r8L	row count
+;		r14L 	left col
+
+	LDA	r15H		;pile index
+	
+	STA	r2L
+	LDA	#$05
+	STA	r1L
+	
+	LDX	#r1
+	LDY	#r2
+	
+	JSR	BBMult
+	
+	INC	r1L
+	INC	r1L
+	
+	LDA	r1L
+	STA	r14L
+
+	LDA	#COLOURCLEAR
+	STA	r9L
+
+	LDA	r14H
+	LSR
+	LSR
+	LSR
+	STA	r9H
+	
+	LDA	#$0F
+	STA	r8L
+	
+	JSR	CardDrawColour	
+	
 	LDY	#$00
 	LDA	(a1), Y
 	BNE	@begin
@@ -1235,7 +1445,7 @@ CardDrawPile:
 	LDA	(a1), Y
 	ASL
 	TAX
-	
+
 	INC	r13H
 	INC	r13L
 	
@@ -1243,6 +1453,28 @@ CardDrawPile:
 	STA	r0L
 	LDA	CardTops0 + 1, X
 	STA	r0H
+
+;	IN	r9L	colour 
+;		r9H	top 
+;		r8L	row count
+;		r14L 	left col
+
+	LDA	Cards0, X
+	TAX
+
+	LDA	SuitColours0, X
+	STA	r9L
+
+	LDA	r14H
+	LSR
+	LSR
+	LSR
+	STA	r9H
+	
+	LDA	#$01
+	STA	r8L
+	
+	JSR	CardDrawColour
 
 	LDA	r14L
 	STA	r1L
@@ -1273,11 +1505,89 @@ CardDrawPile:
 	
 	STA	r12H
 	
+	LDA	r14H
+	LSR
+	LSR
+	LSR
+	PHA
+		
 	JSR	CardDrawClip
+
+;	IN	r9L	colour 
+;		r9H	top 
+;		r8L	row count
+;		r14L 	left col
+
+	LDX	r12H
+	LDA	Cards0, X
+	TAX
+
+	LDA	SuitColours0, X
+	STA	r9L
+
+	PLA
+	STA	r9H
+	
+	LDA	#$06
+	STA	r8L
+	
+	CLC
+	LDA	r9H
+	ADC	#$06
+	CMP	#$19
+	BCC	@colour
+	
+	SEC
+	LDA	#$19
+	SBC	r9H
+	STA	r8L
+	
+@colour:
+	JSR	CardDrawColour
 
 @exit:
 	RTS
 
+
+;-------------------------------------------------------------------------------
+CardDrawColour:
+;	IN	r9L	colour 
+;		r9H	top 
+;		r8L	row count
+;		r14L 	left col
+;-------------------------------------------------------------------------------
+	LDX	r9H
+	LDA	ColourRowsLo0, X
+	STA	a2L
+	LDA	ColourRowsHi0, X
+	STA	a2H
+	
+	DEC	r8L
+@loop0:
+	LDA	r9L
+	LDY	r14L
+	
+	LDX	#$03
+@loop1:
+	STA	(a2), Y
+	INY
+	DEX
+	BPL	@loop1
+
+	CLC
+	LDA	a2L
+	ADC	#$28
+	STA	a2L
+	LDA	a2H
+	ADC	#$00
+	STA	a2H
+	
+	DEC	r8L
+	LDA	r8L
+	BPL	@loop0
+
+	RTS
+	
 
 ;-------------------------------------------------------------------------------
 SolvMoveCard:
@@ -1393,6 +1703,30 @@ SolvDrawPile:
 
 	JSR	CardDraw
 
+;	Draw colour
+
+;	IN	r9L	colour 
+;		r9H	top 
+;		r8L	row count
+;		r14L 	left col
+
+	LDX	r15H		;Solve pile index
+	LDA	GAMECORE + GAMEDATA::SolvPl0, X
+	ASL
+	TAX
+	LDA	Cards0, X
+	TAX
+	LDA	SuitColours0, X
+	STA	r9L
+
+	LDX	#(TOPPILES_Y / 8)
+	STX	r9H
+	
+	LDA	#$06
+	STA	r8L
+	
+	JSR	CardDrawColour
+
 	RTS
 
 
@@ -1497,7 +1831,7 @@ SpareDeckClick:
 	BCS	@done1
 	
 	LDA	r12L
-	CMP	#FLIPCOUNT
+	CMP	FlipCount0
 	BCC	@loop1
 	
 @done1:
@@ -1521,6 +1855,22 @@ SpareDrawDeck:
 
 	JSR	CardDraw
 
+;	IN	r9L	colour 
+;		r9H	top 
+;		r8L	row count
+;		r14L 	left col
+
+	LDA	SuitColours0 + 5
+	STA	r9L
+
+	LDX	#(TOPPILES_Y / 8)
+	STX	r9H
+	
+	LDA	#$06
+	STA	r8L
+	
+	JSR	CardDrawColour
+	
 	RTS
 
 
@@ -1535,7 +1885,7 @@ FlipDrawPile:
 	
 ;	Else if maximum, just draw
 	LDA	GAMECORE + GAMEDATA::FlipPl0
-	CMP	#FLIPCOUNT
+	CMP	FlipCount0
 	
 	BEQ	@draw
 	
@@ -1561,7 +1911,36 @@ FlipDrawPile:
 	JSR	SetPattern
 	
 	JSR	Rectangle
+
+;	IN	r9L	colour 
+;		r9H	top 
+;		r8L	row count
+;		r14L 	left col
+
+	LDA	#COLOURCLEAR
+	STA	r9L
+
+	LDX	#(FLIPPILE_TOP / 8)
+	STX	r9H
+
+	LDA	#(FLIPPILE_LEFT / 8)
+	STA	r14L
+
+	LDA	#$06
+	STA	r8L
 	
+	JSR	CardDrawColour
+
+	INC	r14L
+	INC	r14L
+	INC	r14L
+	INC	r14L
+
+	LDA	#$06
+	STA	r8L
+	
+	JSR	CardDrawColour
+
 @draw:
 	LDA	GAMECORE + GAMEDATA::FlipPl0
 	BNE	@cont
@@ -1588,6 +1967,26 @@ FlipDrawPile:
 	STA	r12H		;card index * 2
 	
 	JSR	CardDraw
+
+
+;	IN	r9L	colour 
+;		r9H	top 
+;		r8L	row count
+;		r14L 	left col
+
+	LDX	r12H
+	LDA	Cards0, X
+	TAX
+	LDA	SuitColours0, X
+	STA	r9L
+
+	LDX	#(FLIPPILE_TOP / 8)
+	STX	r9H
+
+	LDA	#$06
+	STA	r8L
+	
+	JSR	CardDrawColour
 
 	INC	r14L
 	INC	r14L
@@ -1772,7 +2171,7 @@ FlipMoveCard:
 @loop1:
 	BMI	@populate	;j < 0 then finish
 	
-	CPY	#FLIPCOUNT	
+	CPY	FlipCount0	
 	BCS	@populate	;i >= FLIPCOUNT then finish
 	
 	LDA	SpareData0, X	
@@ -2095,7 +2494,7 @@ GameStart:
 	
 	JSR	SpareDrawDeck
 	
-	LDA	#FLIPCOUNT
+	LDA	FlipCount0
 	STA	GAMECORE + GAMEDATA::LastLns + 7
 	LDA	#$00
 	STA	GAMECORE + GAMEDATA::FlipPl0
@@ -2266,32 +2665,12 @@ DoFileRestart:
 DoFileQuit:
 ;-------------------------------------------------------------------------------
 	JSR	GotoFirstMenu
+	
+	LDA	ColourOrg0
+	JSR	MainFillColour
+	
 	JMP	EnterDeskTop		;return to deskTop!
 	
-
-;-------------------------------------------------------------------------------
-DoAbout:
-;-------------------------------------------------------------------------------
-	JSR	GotoFirstMenu		;roll menu back up
-					;code to handle this event goes here
-	
-	JSR	GameInit
-					
-	RTS				;all done
-
-;-------------------------------------------------------------------------------
-DoClose:
-;-------------------------------------------------------------------------------
-	jsr	GotoFirstMenu		;roll menu back up
-					;code to handle this event goes here
-	rts				;all done
-
-;-------------------------------------------------------------------------------
-DoQuit:
-;-------------------------------------------------------------------------------
-	jsr	GotoFirstMenu		;roll menu back up
-	jmp	EnterDeskTop		;return to deskTop!
-
 
 ;-------------------------------------------------------------------------------
 DoOptionsAuto:
@@ -2329,9 +2708,35 @@ DoOptionsAuto:
 ;-------------------------------------------------------------------------------
 DoOptionsFlip:
 ;-------------------------------------------------------------------------------
-	jsr	GotoFirstMenu
-	rts
+	JSR	GotoFirstMenu
+	
+	LDA	FlipCount0
+	CMP	#$03
+	BEQ	@set1
+	
+	LDA	#$03
+	STA	FlipCount0
 
+	LDA	#<MainMenuText9
+	STA	MenuFlipText0
+	LDA	#>MainMenuText9
+	STA	MenuFlipText0 + 1
+	
+	JMP	@done
+	
+@set1:
+	LDA	#$01
+	STA	FlipCount0
+
+	LDA	#<MainMenuTextA
+	STA	MenuFlipText0
+	LDA	#>MainMenuTextA
+	STA	MenuFlipText0 + 1
+
+@done:
+	JSR	GameStart
+	
+	RTS
 
 
 ;-------------------------------------------------------------------------------
@@ -2463,6 +2868,21 @@ SolvPileRight0:
 		.word	SOLVPLE3_RIGHT
 
 
+ColourRowsLo0:
+		.byte	<$8C00, <$8C28, <$8C50, <$8C78, <$8CA0
+		.byte	<$8CC8, <$8CF0, <$8D18, <$8D40, <$8D68
+		.byte 	<$8D90, <$8DB8, <$8DE0, <$8E08, <$8E30
+		.byte	<$8E58, <$8E80, <$8EA8, <$8ED0, <$8EF8
+		.byte	<$8F20, <$8F48, <$8F70, <$8F98, <$8FC0
+		
+ColourRowsHi0:
+		.byte	>$8C00, >$8C28, >$8C50, >$8C78, >$8CA0
+		.byte	>$8CC8, >$8CF0, >$8D18, >$8D40, >$8D68
+		.byte 	>$8D90, >$8DB8, >$8DE0, >$8E08, >$8E30
+		.byte	>$8E58, >$8E80, >$8EA8, >$8ED0, >$8EF8
+		.byte	>$8F20, >$8F48, >$8F70, >$8F98, >$8FC0
+
+
 ;-------------------------------------------------------------------------------
 	.include	"cards.inc"
 ;-------------------------------------------------------------------------------
@@ -2489,6 +2909,14 @@ CardData0:
 	.word	GAMECORE + GAMEDATA::CardPl6
 	.word	GAMECORE + GAMEDATA::FlipPl0
 
+
+ColourOrg0:
+;-------------------------------------------------------------------------------
+		.byte	$BF
+
+FlipCount0:
+;-------------------------------------------------------------------------------
+		.byte	$03
 
 ProcessData0:
 ;-------------------------------------------------------------------------------

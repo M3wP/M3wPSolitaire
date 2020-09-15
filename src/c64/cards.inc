@@ -53,6 +53,14 @@ Cards0:
 		.byte	$04, $0C
 		.byte	$04, $0D
 		.byte	$05, $0E
+		
+SuitColours0:
+		.byte	$B1
+		.byte	$21
+		.byte	$01
+		.byte	$21
+		.byte	$01
+		.byte	$98
 
 CardSuits0:
 		.word	SuitBL
