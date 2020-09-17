@@ -14,6 +14,10 @@ As a result, the source can be compiled for almost any modern platform you can t
 
 In addition to the modern platform implementation, I have ported the code to GEOS for the Commodore 64!  This was a necessity, of course!  A further port to the Apple II should be very easy to do.
 
+The card graphics for the C64 version were made by Isildur of Samar Productions with some small help by myself.  I cannot thank him enough for his brilliant work.
+
+The particle effects for the modern platform implementations were done using a port of the PDParticles class from the Starling Framework which I did.  You can find the license information for this in the _src_ folder and the port itself in its own repository at https://github.com/M3wP/ParticleSystem
+
 
 ## Download and Installation
 
