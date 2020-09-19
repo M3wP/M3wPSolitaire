@@ -1,14 +1,6 @@
 ;************************************************************************
 ;
-;		SamSeq
 ;
-;	This is the main file for the GeoProgrammer package sample
-;	application. It contains all of the code and data required
-;	for assembly.
-;
-;Copyright (c) 1987 Berkeley Softworks. Released to the Public Domain.
-;
-;Translation to the Ophis assembler by Daniel England, 2016.
 ;************************************************************************
 
 	.include	"geosSym.inc"		;get GEOS definitions
@@ -22,6 +14,11 @@ TOPPILES_Y	=	$10
 
 CARDWIDTH	=	4 * 8
 CARDHEIGHT	=	6 * 8
+
+CARDKINGD	=	13
+CARDKINGC	=	26
+CARDKINGH	=	39
+CARDKINGS	=	52
 
 SPAREDEK_X	=	$23
 SPAREDEK_TOP 	=	TOPPILES_Y 	
@@ -170,21 +167,17 @@ SOLVPLE3_RIGHT 	=	SOLVPLE2_RIGHT + CARDWIDTH + 8
 	.SEGMENT	"FILEINFO"
 	.SEGMENT	"STARTUP"
 
-	.CODE				;program code section starts here
-	.ORG	 $0400			;
+	.CODE				
+	.ORG	 $0400			
 	
-;Our program starts here. The first thing we do is clear the screen and
-;initialize our menus and icons. Then we RTS to GEOS mainloop.
-;When an event happens, such as the user selects a menu item or one of our
-;icons, GEOS will call one of our handler routines.
-
 ;-------------------------------------------------------------------------------
 Main:
 ;-------------------------------------------------------------------------------
-	LoadB	dispBufferOn, ST_WR_FORE | ST_WR_BACK
-					;allow writes to foreground and background
+;	LoadB	dispBufferOn, ST_WR_FORE | ST_WR_BACK
+	LoadB	dispBufferOn, ST_WR_FORE
+					
 
-	LoadW	r0, ClearScreen		;point to graphics string to clear screen
+	LoadW	r0, ClearScreen0	;point to graphics string to clear screen
 	JSR	GraphicsString
 
 	LoadW	r0, MainMenu		;point to menu definition table
@@ -195,7 +188,7 @@ Main:
 	STA	GAMECORE + GAMEDATA::AutoEnb
 
 	LoadW	r0, ProcessData0
-	LDA	#$01
+	LDA	#$02
 	JSR	InitProcesses
 
 	LDA	COLOR_MATRIX
@@ -211,6 +204,11 @@ Main:
 	LDA	#>HookPressVec
 	STA	otherPressVec + 1
 
+	LDA	#<HookRecoverVec
+	STA	RecoverVector
+	LDA	#>HookRecoverVec
+	STA	RecoverVector + 1
+	
 	RTS
 
 
@@ -234,6 +232,53 @@ MainFillColour:
 	
 	RTS
 	
+	
+;-------------------------------------------------------------------------------
+HookRecoverVec:
+;-------------------------------------------------------------------------------
+;	JSR	RecoverRectangle
+
+	LDA	#$02
+	JSR	SetPattern
+	
+	JSR	Rectangle
+
+	LDA	RecoverFlags0
+	BEQ	@exit
+	BPL	@top
+	
+	LDA	GAMECORE + GAMEDATA::DirtyPl + 3
+	ORA	#$80
+	STA	GAMECORE + GAMEDATA::DirtyPl + 3
+
+	LDA	GAMECORE + GAMEDATA::DirtyPl + 4
+	ORA	#$80
+	STA	GAMECORE + GAMEDATA::DirtyPl + 4
+
+	JSR	DealDrawAll
+
+	JSR	GameUpdatePiles
+
+@top:
+	JSR	SolvDrawAll
+	
+	LDA	RecoverFlags0
+	BMI	@clearcrds
+	
+	LDA	#$00
+	STA	RecoverFlags0
+
+	LDX	#$01
+	JSR	UnBlockProcess
+	
+@exit:
+	RTS
+	
+@clearcrds:
+	LDA	#$01
+	STA	RecoverFlags0
+	RTS
+	
 
 ;-------------------------------------------------------------------------------
 HookPressVec:
@@ -252,7 +297,7 @@ HookPressVec:
 	RTS
 	
 @begin:
-	LoadB	dispBufferOn, ST_WR_FORE
+;	LoadB	dispBufferOn, ST_WR_FORE
 
 	JSR	SpareLoadRect
 	
@@ -405,7 +450,7 @@ HookPressVec:
 	JSR	GameUpdatePiles
 
 @exit:
-	LoadB	dispBufferOn, ST_WR_FORE | ST_WR_BACK
+;	LoadB	dispBufferOn, ST_WR_FORE | ST_WR_BACK
 	RTS
 
 
@@ -615,6 +660,9 @@ DealPopCard:
 
 ;-------------------------------------------------------------------------------
 DealDrawPile:
+;	IN	a0	deal pile
+;		r15H	deal pile index
+;		
 ;-------------------------------------------------------------------------------
 	LDY	#$00
 	LDA	(a0), Y
@@ -718,9 +766,9 @@ DealDrawPile:
 	JSR	CardDrawColour
 	
 @loop0:
-	LDA	#<CardTopBK
+	LDA	CardTopsBK
 	STA	r0L
-	LDA	#>CardTopBK
+	LDA	CardTopsBK + 1
 	STA	r0H
 	
 	LDA	r14L
@@ -783,9 +831,9 @@ DealDrawPile:
 	
 	JSR	BitmapUp
 	
-	LDA	#<SuitBK
+	LDA	CardSuitsBK
 	STA	r0L
-	LDA	#>SuitBK
+	LDA	CardSuitsBK + 1
 	STA	r0H
 	
 	LDA	r14L
@@ -803,6 +851,31 @@ DealDrawPile:
 	STA	r2H
 	
 	JSR	BitmapUp
+	
+	RTS
+	
+	
+;-------------------------------------------------------------------------------
+DealDrawAll:
+;-------------------------------------------------------------------------------
+	LDA	#$00
+	STA	r15H
+	
+@loop0:
+	ASL
+	TAX
+	
+	LDA	DealData0, X
+	STA	a0L
+	LDA	DealData0 + 1, X
+	STA	a0H
+	
+	JSR	DealDrawPile
+	
+	INC	r15H
+	LDA	r15H
+	CMP	#$07
+	BNE	@loop0
 	
 	RTS
 	
@@ -1733,7 +1806,7 @@ SolvDrawPile:
 ;-------------------------------------------------------------------------------
 SolvDrawAll:
 ;-------------------------------------------------------------------------------
-	LoadB	dispBufferOn, ST_WR_FORE | ST_WR_BACK
+;	LoadB	dispBufferOn, ST_WR_FORE | ST_WR_BACK
 	
 	LDA	#$00
 	STA	r15H
@@ -1746,7 +1819,7 @@ SolvDrawAll:
 	CMP	#$04
 	BNE	@loop0
 
-	LoadB	dispBufferOn, ST_WR_FORE 
+;	LoadB	dispBufferOn, ST_WR_FORE 
 
 	RTS
 
@@ -2412,7 +2485,7 @@ GameFindNextPile:
 ;-------------------------------------------------------------------------------
 GameUpdatePiles:
 ;-------------------------------------------------------------------------------
-	LoadB	dispBufferOn, ST_WR_FORE 
+;	LoadB	dispBufferOn, ST_WR_FORE 
 	
 	LDA	#$00
 	STA	r15H
@@ -2448,7 +2521,7 @@ GameUpdatePiles:
 	
 	JSR	FlipUpdatePile
 	
-	LoadB	dispBufferOn, ST_WR_FORE | ST_WR_BACK
+;	LoadB	dispBufferOn, ST_WR_FORE | ST_WR_BACK
 	
 	INC	r15H
 	LDX	r15H
@@ -2469,7 +2542,7 @@ GameUpdatePiles:
 	CPX	#$0C
 	BNE	@loop1
 
-	LoadB	dispBufferOn, ST_WR_FORE 
+;	LoadB	dispBufferOn, ST_WR_FORE 
 	
 	RTS
 
@@ -2480,13 +2553,19 @@ GameInit:
 	JSR	DeckShuffle
 ;-------------------------------------------------------------------------------
 GameStart:
-	LDA	GAMECORE + GAMEDATA::AutoEnb
-	STA	GAMECORE + GAMEDATA::AutoCan
-
 	LDX	#$00
 	JSR	BlockProcess
+	LDX	#$01
+	JSR	BlockProcess
 
-	LoadB	dispBufferOn, ST_WR_FORE
+	LDA	GAMECORE + GAMEDATA::AutoEnb
+	STA	GAMECORE + GAMEDATA::AutoCan
+	
+	LDA	#$00
+	STA	GameOverFlg0
+	STA	GameOverIdx0
+
+;	LoadB	dispBufferOn, ST_WR_FORE
 	
 	JSR	DeckDeal
 
@@ -2502,13 +2581,183 @@ GameStart:
 	
 	JSR	FlipDrawPile
 
-	LoadB	dispBufferOn, ST_WR_FORE | ST_WR_BACK
+;	LoadB	dispBufferOn, ST_WR_FORE | ST_WR_BACK
 
 	LDX	#$00
+	JSR	RestartProcess
+	LDX	#$01
 	JSR	RestartProcess
 	
 	RTS
 
+
+;-------------------------------------------------------------------------------
+GameAnimateOver:
+;-------------------------------------------------------------------------------
+	LDA	GameOverIdx0
+	CMP	#$04
+	BNE	@cont0
+	
+	LDA	#$00
+	STA	GameOverIdx0
+@cont0:
+	CLC
+	ADC	#$08
+	STA	r15H
+
+	JSR	SolvLoadPileRect
+	JSR	InvertRectangle
+
+@loop0:
+	JSR	GetRandom
+	
+;	GetRandom returns 0 - 65521.  Need 0 to 11
+	LDA	#$44
+	STA	r2L
+	LDA	#$17
+	STA	r2H
+
+	LDA	random
+	STA	r1L
+	LDA	random + 1
+	STA	r1H
+	
+	LDX	#r1
+	LDY	#r2
+	
+	JSR	Ddiv
+	
+	LDA	r1L
+	CMP	#$0C
+	BCS	@loop0		;>= 12 redo
+	
+	CLC
+	ADC	#$08
+	
+	PHA
+	
+	ASL
+	ASL
+	ASL
+	STA	r14H
+	
+@loop1:
+	JSR	GetRandom
+	
+;	GetRandom returns 0 - 65521.  Need 0 to 35
+	LDA	#$50
+	STA	r2L
+	LDA	#$07
+	STA	r2H
+
+	LDA	random
+	STA	r1L
+	LDA	random + 1
+	STA	r1H
+	
+	LDX	#r1
+	LDY	#r2
+	
+	JSR	Ddiv
+	
+	LDA	r1L
+	CMP	#$24
+	BCS	@loop1		;>= 36 redo
+	
+	STA	r14L
+	
+	LDX	GameOverIdx0
+	TXA
+	PHA
+	
+	LDA	GAMECORE + GAMEDATA::SolvPl0, X
+	DEC	GAMECORE + GAMEDATA::SolvPl0, X
+	
+	ASL
+	STA	r12H
+	
+;	IN:	r12H	Card index * 2
+;		r14L	x cell
+;		r14H	y co-ord
+	JSR	CardDraw
+
+	PLA
+	TAX
+	INX	
+	LDA	SuitColours0, X
+	STA	r9L
+	
+	PLA
+	STA	r9H
+	
+	LDA	#$06
+	STA	r8L
+	
+	DEX
+	TXA
+	PHA
+	
+;	IN	r9L	colour 
+;		r9H	top 
+;		r8L	row count
+;		r14L 	left col
+	JSR	CardDrawColour
+	
+	PLA
+	TAX
+	
+	LDA	GAMECORE + GAMEDATA::SolvPl0, X
+	CMP	CardEmpty0, X
+	BNE	@done
+	
+	LDA	CardKings0, X
+	STA	GAMECORE + GAMEDATA::SolvPl0, X
+	
+@done:
+	STX	r15H
+	JSR	SolvDrawPile
+	
+	INC	GameOverIdx0
+	
+	RTS
+
+
+;-------------------------------------------------------------------------------
+ProcGameOver:
+;-------------------------------------------------------------------------------
+	LDA	GameOverFlg0
+	BNE	@animate
+	
+	LDA	GAMECORE + GAMEDATA::SolvPl0
+	CMP	#CARDKINGD
+	BNE	@exit
+	
+	LDA	GAMECORE + GAMEDATA::SolvPl0 + 1
+	CMP	#CARDKINGC
+	BNE	@exit
+	
+	LDA	GAMECORE + GAMEDATA::SolvPl0 + 2
+	CMP	#CARDKINGH
+	BNE	@exit
+
+	LDA	GAMECORE + GAMEDATA::SolvPl0 + 3
+	CMP	#CARDKINGS
+	BNE	@exit
+
+	LDA	#$01 
+	STA	GameOverFlg0
+	LDA	#$00
+	STA	GameOverIdx0
+	
+	LDX	#$00
+	JSR	BlockProcess
+	
+@animate:
+	JSR	GameAnimateOver
+
+@exit:
+	RTS
+	
 
 ;-------------------------------------------------------------------------------
 ProcAutoSolve:
@@ -2582,7 +2831,7 @@ ProcAutoSolve:
 	RTS
 	
 @found:
-	LoadB	dispBufferOn, ST_WR_FORE
+;	LoadB	dispBufferOn, ST_WR_FORE
 	
 	LDY	#$00
 	LDA	(a1), Y
@@ -2630,7 +2879,7 @@ ProcAutoSolve:
 @update:
 	JSR	GameUpdatePiles
 
-	LoadB	dispBufferOn, ST_WR_FORE | ST_WR_BACK
+;	LoadB	dispBufferOn, ST_WR_FORE | ST_WR_BACK
 
 	RTS
 		
@@ -2638,10 +2887,197 @@ ProcAutoSolve:
 ;Event handler routines: are called by GEOS when an event happens,
 ;such as user selecting a menu item or clicking on an icon.
 
+
+;-------------------------------------------------------------------------------
+MenuFillColour:
+;-------------------------------------------------------------------------------
+	LDY	#$00
+
+	LDA	(r0), Y
+	LSR
+	LSR
+	LSR
+	STA	r12L			;Top
+	
+	INY
+	LDA	(r0), Y
+	LSR
+	LSR
+	LSR
+	STA	r12H			;Bottom
+	INC	r12H
+	
+	INY
+	LDA	(r0), Y
+	LSR
+	LSR
+	LSR
+	STA	r13L			;Left
+
+	INY
+	INY
+	LDA	(r0), Y
+	LSR
+	LSR
+	LSR
+	STA	r13H			;Right
+	INC	r13H
+	
+	
+	LDY	r12L
+@loop0:
+	LDA	ColourRowsLo0, Y
+	STA	a2L
+	LDA	ColourRowsHi0, Y
+	STA	a2H
+	
+	LDY	r13L
+@loop1:
+	LDA	#COLOURCLEAR
+	STA	(a2), Y
+	INY
+	CPY	r13H
+	BCC	@loop1
+	
+	INC	r12L
+	LDY	r12L
+	CPY	r12H
+	BCC	@loop0
+	
+	RTS
+
+
+;-------------------------------------------------------------------------------
+DoMenuGeos:
+;-------------------------------------------------------------------------------
+	LDX	#$01
+	JSR	BlockProcess
+	
+	LDA	RecoverFlags0
+	ORA	#$01
+	STA	RecoverFlags0
+		
+	LDA	#<MainMenuGeos
+	STA	r0L
+	LDA	#>MainMenuGeos
+	STA	r0H
+	
+	JSR	MenuFillColour
+	RTS
+
+
+;-------------------------------------------------------------------------------
+DoMenuFile:
+;-------------------------------------------------------------------------------
+	LDX	#$01
+	JSR	BlockProcess
+	
+	LDA	RecoverFlags0
+	ORA	#$01
+	STA	RecoverFlags0
+	
+	LDA	#<MainMenuFile
+	STA	r0L
+	LDA	#>MainMenuFile
+	STA	r0H
+	
+	JSR	MenuFillColour
+	RTS
+
+
+;-------------------------------------------------------------------------------
+DoMenuOptions:
+;-------------------------------------------------------------------------------
+	LDX	#$01
+	JSR	BlockProcess
+	
+	LDA	RecoverFlags0
+	ORA	#$01
+	STA	RecoverFlags0
+	
+	LDA	#<MainMenuOptions
+	STA	r0L
+	LDA	#>MainMenuOptions
+	STA	r0H
+	
+	JSR	MenuFillColour
+	RTS
+
+
+;-------------------------------------------------------------------------------
+DoMenuDeck:
+;-------------------------------------------------------------------------------
+	LDX	#$01
+	JSR	BlockProcess
+	
+	LDA	RecoverFlags0
+	ORA	#$01
+	STA	RecoverFlags0
+	
+	LDA	#<MainMenuDeck
+	STA	r0L
+	LDA	#>MainMenuDeck
+	STA	r0H
+	
+	JSR	MenuFillColour
+	RTS
+
+
+;-------------------------------------------------------------------------------
+DoMenuBack:
+;-------------------------------------------------------------------------------
+	LDX	#$01
+	JSR	BlockProcess
+	
+	LDA	RecoverFlags0
+	ORA	#$81
+	STA	RecoverFlags0
+	
+	LDA	#<DeckMenuBack
+	STA	r0L
+	LDA	#>DeckMenuBack
+	STA	r0H
+	
+	JSR	MenuFillColour
+	RTS
+
+
+;-------------------------------------------------------------------------------
+DoMenuColour:
+;-------------------------------------------------------------------------------
+	LDX	#$01
+	JSR	BlockProcess
+	
+	LDA	RecoverFlags0
+	ORA	#$81
+	STA	RecoverFlags0
+	
+	LDA	#<DeckMenuColour
+	STA	r0L
+	LDA	#>DeckMenuColour
+	STA	r0H
+	
+	JSR	MenuFillColour
+	RTS
+
+
 ;-------------------------------------------------------------------------------
 DoGeosAbout:
 ;-------------------------------------------------------------------------------
 	JSR	GotoFirstMenu
+	
+	LDA	#CARDKINGD
+	STA	GAMECORE + GAMEDATA::SolvPl0
+
+	LDA	#CARDKINGC
+	STA	GAMECORE + GAMEDATA::SolvPl0 + 1
+	
+	LDA	#CARDKINGH
+	STA	GAMECORE + GAMEDATA::SolvPl0 + 2
+	
+	LDA	#CARDKINGS
+	STA	GAMECORE + GAMEDATA::SolvPl0 + 3
+	
 	RTS
 
 
@@ -2649,6 +3085,13 @@ DoGeosAbout:
 DoFileNew:
 ;-------------------------------------------------------------------------------
 	JSR	GotoFirstMenu
+
+	LDA	#COLOURCLEAR
+	JSR	MainFillColour
+	
+	LoadW	r0, ClearScreen1
+	JSR	GraphicsString
+
 	JSR	GameInit
 	RTS
 
@@ -2657,6 +3100,13 @@ DoFileNew:
 DoFileRestart:
 ;-------------------------------------------------------------------------------
 	JSR	GotoFirstMenu
+
+	LDA	#COLOURCLEAR
+	JSR	MainFillColour
+	
+	LoadW	r0, ClearScreen1
+	JSR	GraphicsString
+	
 	JSR	GameStart
 	RTS
 	
@@ -2685,9 +3135,9 @@ DoOptionsAuto:
 	STA	GAMECORE + GAMEDATA::AutoEnb
 	STA	GAMECORE + GAMEDATA::AutoCan
 	
-	LDA	#<MainMenuText8
+	LDA	#<MainMenuText8a
 	STA	MenuAutoText0
-	LDA	#>MainMenuText8
+	LDA	#>MainMenuText8a
 	STA	MenuAutoText0 + 1
 	
 	RTS
@@ -2697,9 +3147,9 @@ DoOptionsAuto:
 	STA	GAMECORE + GAMEDATA::AutoEnb
 	STA	GAMECORE + GAMEDATA::AutoCan
 	
-	LDA	#<MainMenuText7
+	LDA	#<MainMenuText8
 	STA	MenuAutoText0
-	LDA	#>MainMenuText7
+	LDA	#>MainMenuText8
 	STA	MenuAutoText0 + 1
 
 	RTS
@@ -2728,9 +3178,9 @@ DoOptionsFlip:
 	LDA	#$01
 	STA	FlipCount0
 
-	LDA	#<MainMenuTextA
+	LDA	#<MainMenuText9a
 	STA	MenuFlipText0
-	LDA	#>MainMenuTextA
+	LDA	#>MainMenuText9a
 	STA	MenuFlipText0 + 1
 
 @done:
@@ -2740,12 +3190,253 @@ DoOptionsFlip:
 
 
 ;-------------------------------------------------------------------------------
+DoDeckA:
+;-------------------------------------------------------------------------------
+	JSR	GotoFirstMenu
+	
+	LDA	#'*'
+	STA	MainMenuText12
+	
+	LDA	#' '
+	STA	MainMenuText13
+	STA	MainMenuText14
+	STA	MainMenuText15
+	
+	LDA	#<CardTopBKa
+	STA	CardTopsBK
+	LDA	#>CardTopBKa
+	STA	CardTopsBK + 1
+	
+	LDA	#<SuitBKa
+	STA	CardSuitsBK
+	LDA	#>SuitBKa
+	STA	CardSuitsBK + 1
+	
+	LDA	#<CardBotBKa
+	STA	CardBotsBK
+	LDA	#>CardBotBKa
+	STA	CardBotsBK + 1
+	
+	JSR	DealDrawAll
+	JSR	SpareDrawDeck
+	RTS
+
+
+;-------------------------------------------------------------------------------
+DoDeckB:
+;-------------------------------------------------------------------------------
+	JSR	GotoFirstMenu
+
+	LDA	#'*'
+	STA	MainMenuText13
+	
+	LDA	#' '
+	STA	MainMenuText12
+	STA	MainMenuText14
+	STA	MainMenuText15
+	
+	LDA	#<CardTopBKb
+	STA	CardTopsBK
+	LDA	#>CardTopBKb
+	STA	CardTopsBK + 1
+	
+	LDA	#<SuitBKb
+	STA	CardSuitsBK
+	LDA	#>SuitBKb
+	STA	CardSuitsBK + 1
+	
+	LDA	#<CardBotBKb
+	STA	CardBotsBK
+	LDA	#>CardBotBKb
+	STA	CardBotsBK + 1
+	
+	JSR	DealDrawAll
+	JSR	SpareDrawDeck
+	RTS
+
+
+;-------------------------------------------------------------------------------
+DoDeckC:
+;-------------------------------------------------------------------------------
+	JSR	GotoFirstMenu
+
+	LDA	#'*'
+	STA	MainMenuText14
+	
+	LDA	#' '
+	STA	MainMenuText12
+	STA	MainMenuText13
+	STA	MainMenuText15
+	
+	LDA	#<CardTopBKc
+	STA	CardTopsBK
+	LDA	#>CardTopBKc
+	STA	CardTopsBK + 1
+	
+	LDA	#<SuitBKc
+	STA	CardSuitsBK
+	LDA	#>SuitBKc
+	STA	CardSuitsBK + 1
+	
+	LDA	#<CardBotBKc
+	STA	CardBotsBK
+	LDA	#>CardBotBKc
+	STA	CardBotsBK + 1
+	
+	JSR	DealDrawAll
+	JSR	SpareDrawDeck
+	RTS
+
+
+;-------------------------------------------------------------------------------
+DoDeckD:
+;-------------------------------------------------------------------------------
+	JSR	GotoFirstMenu
+
+	LDA	#'*'
+	STA	MainMenuText15
+	
+	LDA	#' '
+	STA	MainMenuText12
+	STA	MainMenuText13
+	STA	MainMenuText14
+	
+	LDA	#<CardTopBKd
+	STA	CardTopsBK
+	LDA	#>CardTopBKd
+	STA	CardTopsBK + 1
+	
+	LDA	#<SuitBKd
+	STA	CardSuitsBK
+	LDA	#>SuitBKd
+	STA	CardSuitsBK + 1
+	
+	LDA	#<CardBotBKd
+	STA	CardBotsBK
+	LDA	#>CardBotBKd
+	STA	CardBotsBK + 1
+	
+	JSR	DealDrawAll
+	JSR	SpareDrawDeck
+	RTS
+
+
+;-------------------------------------------------------------------------------
+DoColourA:
+;-------------------------------------------------------------------------------
+	JSR	GotoFirstMenu
+
+	LDA	#'*'
+	STA	MainMenuText16
+	
+	LDA	#' '
+	STA	MainMenuText17
+	STA	MainMenuText18
+	STA	MainMenuText19
+	STA	MainMenuText20
+	
+	LDA	DeckColours0
+	STA	SuitColoursBK
+	
+	JSR	DealDrawAll
+	JSR	SpareDrawDeck
+	RTS
+
+
+;-------------------------------------------------------------------------------
+DoColourB:
+;-------------------------------------------------------------------------------
+	JSR	GotoFirstMenu
+
+	LDA	#'*'
+	STA	MainMenuText17
+	
+	LDA	#' '
+	STA	MainMenuText16
+	STA	MainMenuText18
+	STA	MainMenuText19
+	STA	MainMenuText20
+	
+	LDA	DeckColours0 + 1
+	STA	SuitColoursBK
+	
+	JSR	DealDrawAll
+	JSR	SpareDrawDeck
+	RTS
+
+
+;-------------------------------------------------------------------------------
+DoColourC:
+;-------------------------------------------------------------------------------
+	JSR	GotoFirstMenu
+
+	LDA	#'*'
+	STA	MainMenuText18
+	
+	LDA	#' '
+	STA	MainMenuText16
+	STA	MainMenuText17
+	STA	MainMenuText19
+	STA	MainMenuText20
+	
+	LDA	DeckColours0 + 2
+	STA	SuitColoursBK
+	
+	JSR	DealDrawAll
+	JSR	SpareDrawDeck
+	RTS
+
+
+;-------------------------------------------------------------------------------
+DoColourD:
+;-------------------------------------------------------------------------------
+	JSR	GotoFirstMenu
+
+	LDA	#'*'
+	STA	MainMenuText19
+	
+	LDA	#' '
+	STA	MainMenuText16
+	STA	MainMenuText17
+	STA	MainMenuText18
+	STA	MainMenuText20
+	
+	LDA	DeckColours0 + 3
+	STA	SuitColoursBK
+	
+	JSR	DealDrawAll
+	JSR	SpareDrawDeck
+	RTS
+
+
+;-------------------------------------------------------------------------------
+DoColourE:
+;-------------------------------------------------------------------------------
+	JSR	GotoFirstMenu
+
+	LDA	#'*'
+	STA	MainMenuText20
+	
+	LDA	#' '
+	STA	MainMenuText16
+	STA	MainMenuText17
+	STA	MainMenuText18
+	STA	MainMenuText19
+	
+	LDA	DeckColours0 + 4
+	STA	SuitColoursBK
+	
+	JSR	DealDrawAll
+	JSR	SpareDrawDeck
+	RTS
+
+
+
+;-------------------------------------------------------------------------------
 ;DATA SECTION
 ;-------------------------------------------------------------------------------
 
-;Here are some data tables for the init code shown above:
-
-ClearScreen:				;graphics string table to clear screen
+ClearScreen0:				;graphics string table to clear screen
 ;-------------------------------------------------------------------------------
 	.byte	NEWPATTERN, 2		;set new pattern value
 	.byte	MOVEPENTO		;move pen to:
@@ -2756,63 +3447,131 @@ ClearScreen:				;graphics string table to clear screen
 	.byte	199
 	.byte	NULL			;end of GraphicsString
 
+ClearScreen1:				;graphics string table to clear screen
+;-------------------------------------------------------------------------------
+	.byte	NEWPATTERN, 2		;set new pattern value
+	.byte	MOVEPENTO		;move pen to:
+	.word	0			;top left corner of screen
+	.byte	$10
+	.byte	RECTANGLETO		;draw filled rectangle to bottom right corner
+	.word	319
+	.byte	199
+	.byte	NULL			;end of GraphicsString
+	
 MainMenu:
 ;-------------------------------------------------------------------------------
 		.byte	$00
 		.byte	$0E
 		.word	$0000
-		.word	$0058
-		.byte	03 | HORIZONTAL
+		.word	$0074
+		.byte	04 | HORIZONTAL
 		.word	MainMenuText0
-		.byte	SUB_MENU
-		.word	MainMenuGeos
+		.byte	DYN_SUB_MENU
+		.word	DoMenuGeos
 		.word	MainMenuText1
-		.byte	SUB_MENU
-		.word	MainMenuFile
+		.byte	DYN_SUB_MENU
+		.word	DoMenuFile
 		.word	MainMenuText2
-		.byte	SUB_MENU
-		.word	MainMenuOptions
+		.byte	DYN_SUB_MENU
+		.word	DoMenuOptions
+		.word	MainMenuText3
+		.byte	DYN_SUB_MENU
+		.word	DoMenuDeck
 MainMenuGeos:
 ;-------------------------------------------------------------------------------
 		.byte	$0F
-		.byte	$1E
+		.byte	$1F
 		.word	$0000
 		.word	$0027
-		.byte	01 | VERTICAL 	; | CONSTRAINED
-		.word	MainMenuText3
+		.byte	01 | VERTICAL
+		.word	MainMenuText4
 		.byte	MENU_ACTION
 		.word	DoGeosAbout
 MainMenuFile:
 ;-------------------------------------------------------------------------------
 		.byte	$0F
-		.byte	$38
-		.word	$001C
-		.word	$0041
-		.byte	03 | VERTICAL 	; | CONSTRAINED
-		.word	MainMenuText4
-		.byte	MENU_ACTION
-		.word	DoFileNew
+		.byte	$3F
+		.word	$0018
+		.word	$003F
+		.byte	03 | VERTICAL
 		.word	MainMenuText5
 		.byte	MENU_ACTION
-		.word	DoFileRestart
+		.word	DoFileNew
 		.word	MainMenuText6
+		.byte	MENU_ACTION
+		.word	DoFileRestart
+		.word	MainMenuText7
 		.byte	MENU_ACTION
 		.word	DoFileQuit
 MainMenuOptions:
 ;-------------------------------------------------------------------------------
 		.byte	$0F
-		.byte	$2D
+		.byte	$2F
 		.word	$0030
-		.word	$007D
-		.byte	02 | VERTICAL 	; | CONSTRAINED
+		.word	$007F
+		.byte	02 | VERTICAL
 MenuAutoText0:
-		.word	MainMenuText7
+		.word	MainMenuText8
 		.byte	MENU_ACTION
 		.word	DoOptionsAuto
 MenuFlipText0:
 		.word	MainMenuText9
 		.byte	MENU_ACTION
 		.word	DoOptionsFlip
+MainMenuDeck:
+;-------------------------------------------------------------------------------
+		.byte	$0F
+		.byte	$2F
+		.word	$0058
+		.word	$0087
+		.byte	02 | VERTICAL
+		.word	MainMenuText10
+		.byte	DYN_SUB_MENU
+		.word	DoMenuBack
+		.word	MainMenuText11
+		.byte	DYN_SUB_MENU
+		.word	DoMenuColour
+DeckMenuBack:
+;-------------------------------------------------------------------------------
+		.byte	$0F
+		.byte	$47
+		.word	$0087
+		.word	$00AF
+		.byte	04 | VERTICAL
+		.word	MainMenuText12
+		.byte	MENU_ACTION
+		.word	DoDeckA
+		.word	MainMenuText13
+		.byte	MENU_ACTION
+		.word	DoDeckB
+		.word	MainMenuText14
+		.byte	MENU_ACTION
+		.word	DoDeckC
+		.word	MainMenuText15
+		.byte	MENU_ACTION
+		.word	DoDeckD
+DeckMenuColour:
+;-------------------------------------------------------------------------------
+		.byte	$0F
+		.byte	$57
+		.word	$0087
+		.word	$00BF
+		.byte	05 | VERTICAL
+		.word	MainMenuText16
+		.byte	MENU_ACTION
+		.word	DoColourA
+		.word	MainMenuText17
+		.byte	MENU_ACTION
+		.word	DoColourB
+		.word	MainMenuText18
+		.byte	MENU_ACTION
+		.word	DoColourC
+		.word	MainMenuText19
+		.byte	MENU_ACTION
+		.word	DoColourD
+		.word	MainMenuText20
+		.byte	MENU_ACTION
+		.word	DoColourE
 MainMenuText0:
 		.byte	"geos", $00
 MainMenuText1:
@@ -2820,21 +3579,45 @@ MainMenuText1:
 MainMenuText2:
 		.byte	"options", $00
 MainMenuText3:
-		.byte	"about", $00
+		.byte	"deck", $00
 MainMenuText4:
-		.byte	"new", $00
+		.byte	"about", $00
 MainMenuText5:
-		.byte	"restart", $00
+		.byte	"new", $00
 MainMenuText6:
-		.byte	"quit", $00
+		.byte	"restart", $00
 MainMenuText7:
-		.byte	"auto solve: on", $00
+		.byte	"quit", $00
 MainMenuText8:
+		.byte	"auto solve: on", $00
+MainMenuText8a:
 		.byte	"auto solve: off", $00
 MainMenuText9:
 		.byte	"flip count: 3", $00
-MainMenuTextA:
+MainMenuText9a:
 		.byte	"flip count: 1", $00
+MainMenuText10:
+		.byte	"back >", $00
+MainMenuText11:
+		.byte	"colour >", $00
+MainMenuText12:
+		.byte	"*  a", $00
+MainMenuText13:
+		.byte	"   b", $00
+MainMenuText14:
+		.byte	"   c", $00
+MainMenuText15:
+		.byte	"   d", $00
+MainMenuText16:
+		.byte	"*  orange", $00
+MainMenuText17:
+		.byte	"   green", $00
+MainMenuText18:
+		.byte	"   blue", $00
+MainMenuText19:
+		.byte	"   pink", $00
+MainMenuText20:
+		.byte	"   grey", $00
 
 
 CardPileLeft0:
@@ -2866,7 +3649,18 @@ SolvPileRight0:
 		.word	SOLVPLE1_RIGHT
 		.word	SOLVPLE2_RIGHT
 		.word	SOLVPLE3_RIGHT
+		
+CardKings0:
+		.byte	CARDKINGD
+		.byte	CARDKINGC
+		.byte	CARDKINGH
+		.byte	CARDKINGS
 
+CardEmpty0:
+		.byte	0
+		.byte	13
+		.byte	26
+		.byte	39
 
 ColourRowsLo0:
 		.byte	<$8C00, <$8C28, <$8C50, <$8C78, <$8CA0
@@ -2910,6 +3704,19 @@ CardData0:
 	.word	GAMECORE + GAMEDATA::FlipPl0
 
 
+RecoverFlags0:
+;-------------------------------------------------------------------------------
+		.byte	$00
+		
+GameOverFlg0:
+;-------------------------------------------------------------------------------
+		.byte	$00
+
+GameOverIdx0:
+;-------------------------------------------------------------------------------
+		.byte	$00
+		
+
 ColourOrg0:
 ;-------------------------------------------------------------------------------
 		.byte	$BF
@@ -2921,6 +3728,8 @@ FlipCount0:
 ProcessData0:
 ;-------------------------------------------------------------------------------
 	.word	ProcAutoSolve
+	.word	$1E
+	.word	ProcGameOver
 	.word	$1E
 
 
