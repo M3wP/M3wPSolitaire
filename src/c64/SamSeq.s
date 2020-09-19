@@ -722,7 +722,7 @@ DealDrawPile:
 	LDA	r14H
 	STA	r2L
 	CLC
-	ADC	#$10
+	ADC	#$0F
 	STA	r2H
 
 	LDA	#$02
