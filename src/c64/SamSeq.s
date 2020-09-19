@@ -3066,17 +3066,17 @@ DoGeosAbout:
 ;-------------------------------------------------------------------------------
 	JSR	GotoFirstMenu
 	
-	LDA	#CARDKINGD
-	STA	GAMECORE + GAMEDATA::SolvPl0
-
-	LDA	#CARDKINGC
-	STA	GAMECORE + GAMEDATA::SolvPl0 + 1
-	
-	LDA	#CARDKINGH
-	STA	GAMECORE + GAMEDATA::SolvPl0 + 2
-	
-	LDA	#CARDKINGS
-	STA	GAMECORE + GAMEDATA::SolvPl0 + 3
+;	LDA	#CARDKINGD
+;	STA	GAMECORE + GAMEDATA::SolvPl0
+;
+;	LDA	#CARDKINGC
+;	STA	GAMECORE + GAMEDATA::SolvPl0 + 1
+;	
+;	LDA	#CARDKINGH
+;	STA	GAMECORE + GAMEDATA::SolvPl0 + 2
+;	
+;	LDA	#CARDKINGS
+;	STA	GAMECORE + GAMEDATA::SolvPl0 + 3
 	
 	RTS
 
